@@ -1,0 +1,8 @@
+.global m2min_M2RTS_RequestDependant
+.global m2min_M2RTS_RegisterModule
+.text
+m2min_M2RTS_RequestDependant:
+ret
+
+m2min_M2RTS_RegisterModule:
+ret
