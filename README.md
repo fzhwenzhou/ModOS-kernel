@@ -91,7 +91,7 @@ Key compiler flags:
 
 If you're setting up a fresh environment, you'll need:
 1. [GNU Modula-2 (gm2)](https://www.nongnu.org/gm2/) — part of GCC 16.1.0
-2. The [Limine](https://github.com/limine-bootloader/limine) binary distribution
+2. The [Limine](https://github.com/limine-bootloader/limine) binary distribution, or other Multiboot2-compatible bootloaders
 3. OVMF (UEFI firmware) from edk2
 4. QEMU and xorriso
 
