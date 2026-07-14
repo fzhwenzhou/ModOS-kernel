@@ -1,22 +1,43 @@
-# Makefile -- Build Modula-2 kernel modules in src/ and libs/
+# Makefile -- Build Modula-2 kernel modules in src/
+#
+# ARCH and TOOLS are inherited from the top-level Makefile.
+# Delegates to architecture-specific and libc sub-makes.
 
-M2      := gm2
-M2FLAGS := -fno-exceptions -fno-wideset -mcmodel=large -flibs=min \
-           -mno-red-zone -mno-mmx -mno-sse -O2 -Ilibs
+ARCH     ?= x86_64
+TOOLS    ?= /home/naonao/$(ARCH)-elf-tools
 
-.PHONY: all clean libs-submake
+AS       := $(TOOLS)/bin/$(ARCH)-elf-as
+M2       := gm2
 
-all: Kernel.o libs-submake
+M2FLAGS  := -fno-exceptions -fno-wideset -flibs=min -O2
+
+# Architecture-specific flags
+ifeq ($(ARCH),x86_64)
+M2FLAGS += -mcmodel=large -mno-red-zone -mno-mmx -mno-sse
+endif
+
+.PHONY: all clean arch-submake libc-submake
+
+all: stub.o Main.o arch-submake libc-submake
+
+# ---- Assembly ----
+stub.o: stub.S
+	$(AS) -o $@ $<
 
 # ---- Modula-2 compilation ----
-Kernel.o: Kernel.mod Kernel.def Multiboot2.def
+Main.o: Main.mod Main.def
 	$(M2) $(M2FLAGS) -c -o $@ $<
 
-# ---- Delegate to libs/ ----
-libs-submake:
-	$(MAKE) -C libs
+# ---- Delegate to architecture-specific code ----
+arch-submake:
+	$(MAKE) -C arch/$(ARCH) ARCH=$(ARCH) TOOLS=$(TOOLS) AS=$(AS) M2=$(M2) M2FLAGS='$(M2FLAGS)'
+
+# ---- Delegate to libc/ ----
+libc-submake:
+	$(MAKE) -C libc M2=$(M2) M2FLAGS='$(M2FLAGS)'
 
 # ---- Clean ----
 clean:
 	rm -f *.o
-	$(MAKE) -C libs clean
+	$(MAKE) -C arch/$(ARCH) clean ARCH=$(ARCH)
+	$(MAKE) -C libc clean

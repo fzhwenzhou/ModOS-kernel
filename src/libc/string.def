@@ -1,12 +1,10 @@
-(* libc.def — Minimal C library interface for bare-metal Modula-2.
+(* string.def — Minimal C library interface for C string operations.
 
-   Replaces the m2min libc.def while adding the memory functions
-   (memcpy, memset, memmove, memcmp) that the compiler generates
-   calls to internally.  All symbols are exported unqualified with
+   All symbols are exported unqualified with
    C linkage so they satisfy both Modula-2 IMPORT and compiler-
    generated references. *)
 
-DEFINITION MODULE FOR "C" libc ;
+DEFINITION MODULE FOR "C" string ;
 
 FROM SYSTEM IMPORT ADDRESS ;
 
@@ -17,4 +15,4 @@ PROCEDURE memset (s: ADDRESS; c: INTEGER; n: CARDINAL) : ADDRESS ;
 PROCEDURE memmove (dest, src: ADDRESS; n: CARDINAL) : ADDRESS ;
 PROCEDURE memcmp (s1, s2: ADDRESS; n: CARDINAL) : INTEGER ;
 
-END libc.
+END string.

@@ -1,89 +1,71 @@
-# Makefile -- Build and run a multiboot2 x86_64 kernel with Limine + OVMF
+# Makefile -- Top-level build for ModOS-kernel
+#
+# Builds the kernel ELF.  ISO packaging and QEMU launching are
+# handled by build.sh and run.sh respectively.
+#
+# Usage:
+#   make                # build kernel.elf
+#   make clean          # remove all build artifacts
+#   make ARCH=arch      # override architecture (default: x86_64)
+#   make TOOLS=path     # override toolchain prefix
 
-TOOLS   := /home/naonao/x86_64-elf-tools
-LIMINE  := /home/naonao/limine-binary
-OVMF    := /home/naonao/edk2-ovmf
+ARCH    ?= x86_64
+TOOLS   ?= /home/naonao/$(ARCH)-elf-tools
 
-AS      := $(TOOLS)/bin/x86_64-elf-as
-LD      := $(TOOLS)/bin/x86_64-elf-ld
+export ARCH TOOLS
+
+AS      := $(TOOLS)/bin/$(ARCH)-elf-as
+LD      := $(TOOLS)/bin/$(ARCH)-elf-ld
 M2      := gm2
 
-M2FLAGS  := -fno-exceptions -fno-wideset -mcmodel=large -flibs=min \
-           -mno-red-zone -mno-mmx -mno-sse -O2 -Isrc/libs
-LDFLAGS := -T src/linker.ld -nostdlib
+export AS M2
 
-KERNEL  := kernel.elf
-ISO     := limine.iso
-ISO_DIR := iso_root
+# ------------------------------------------------------------------
+# Architecture-independent compiler flags
+# ------------------------------------------------------------------
+M2FLAGS := -fno-exceptions -fno-wideset -flibs=min -O2
 
-# All object files that go into the kernel
-OBJS    := src/boot.o src/stub.o src/Kernel.o src/libs/BitByteOps.o src/libs/libc.o
+# ------------------------------------------------------------------
+# Architecture-specific compiler flags
+# ------------------------------------------------------------------
+ifeq ($(ARCH),x86_64)
+M2FLAGS += -mcmodel=large -mno-red-zone -mno-mmx -mno-sse
+endif
 
-.PHONY: all clean run run-quiet src-submake
+export M2FLAGS
 
-all: $(ISO)
+KERNEL := kernel.elf
 
-# ---- Assembly ----
-src/boot.o: src/boot.S
-	$(AS) -o $@ $<
+# ------------------------------------------------------------------
+# Object file list — extend by adding new subdirectories here
+# ------------------------------------------------------------------
+ARCH_OBJS := \
+    src/arch/$(ARCH)/boot/boot.o \
+    src/arch/$(ARCH)/ArchMain.o \
+    src/arch/$(ARCH)/libm2/BitByteOps.o
 
-src/stub.o: src/stub.S
-	$(AS) -o $@ $<
+KERNEL_OBJS := \
+    src/stub.o \
+    src/Main.o \
+    $(ARCH_OBJS) \
+    src/libc/string.o
 
-# ---- Modula-2 compilation (delegated to sub-makefiles) ----
+# Linker script (architecture-specific)
+LDSCRIPT := src/arch/$(ARCH)/linker.ld
+
+.PHONY: all clean src-submake
+
+all: $(KERNEL)
+
+# ---- Delegate to src/ sub-make ----
 src-submake:
 	$(MAKE) -C src
 
-# ---- Link (depends on sub-make for Modula-2 .o files) ----
-$(KERNEL): src/boot.o src/stub.o src-submake src/linker.ld
-	$(LD) $(LDFLAGS) -o $@ src/boot.o src/stub.o src/Kernel.o src/libs/BitByteOps.o src/libs/libc.o
-
-# ---- ISO ----
-$(ISO): $(KERNEL) limine.conf
-	rm -rf $(ISO_DIR)
-	mkdir -p $(ISO_DIR)
-	cp $(KERNEL) $(ISO_DIR)/
-	cp limine.conf $(ISO_DIR)/
-	cp $(LIMINE)/limine-bios-cd.bin $(ISO_DIR)/
-	cp $(LIMINE)/limine-uefi-cd.bin $(ISO_DIR)/
-	xorriso -as mkisofs \
-		-b limine-bios-cd.bin \
-		-no-emul-boot \
-		-boot-load-size 4 \
-		-boot-info-table \
-		--efi-boot limine-uefi-cd.bin \
-		-efi-boot-part \
-		--efi-boot-image \
-		--protective-msdos-label \
-		$(ISO_DIR) -o $@
-	@echo
-	@echo "=== ISO created: $(ISO) ==="
-
-# ---- QEMU ----
-run: $(ISO)
-	qemu-system-x86_64 \
-		-M q35 \
-		-m 256M \
-		-cdrom $(ISO) \
-		-bios $(OVMF)/ovmf-code-x86_64.fd \
-		-vga std \
-		-no-reboot \
-		-no-shutdown \
-		-d int,cpu_reset \
-		-serial stdio
-
-run-quiet: $(ISO)
-	qemu-system-x86_64 \
-		-M q35 \
-		-m 256M \
-		-cdrom $(ISO) \
-		-bios $(OVMF)/ovmf-code-x86_64.fd \
-		-vga std \
-		-no-reboot \
-		-serial stdio
+# ---- Link ----
+$(KERNEL): src-submake $(LDSCRIPT)
+	$(LD) -T $(LDSCRIPT) -nostdlib -o $@ $(KERNEL_OBJS)
 
 # ---- Clean ----
 clean:
-	rm -f $(OBJS) $(KERNEL) $(ISO)
-	rm -rf $(ISO_DIR)
+	rm -rf $(KERNEL)
 	$(MAKE) -C src clean

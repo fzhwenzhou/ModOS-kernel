@@ -1,10 +1,8 @@
-(* libc.mod — Implementation of the minimal C library in pure Modula-2.
+(* string.mod — Implementation of the minimal C string library in pure Modula-2.
 
-   Provides the memory functions the compiler generates calls to,
-   plus stubs for abort, exit, and printf that a bare-metal kernel
-   cannot meaningfully implement. *)
+   Provides the string operations and memory functions. *)
 
-IMPLEMENTATION MODULE libc ;
+IMPLEMENTATION MODULE string ;
 
 FROM SYSTEM IMPORT ADDRESS, BYTE, CARDINAL64 ;
 
@@ -122,4 +120,4 @@ BEGIN
 END memcmp ;
 
 
-END libc.
+END string.

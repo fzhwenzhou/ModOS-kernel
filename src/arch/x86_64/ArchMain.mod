@@ -1,13 +1,13 @@
-IMPLEMENTATION MODULE Kernel;
+IMPLEMENTATION MODULE ArchMain;
 
-FROM SYSTEM IMPORT BYTE, BITSET8, ADDRESS, CARDINAL8, CARDINAL32, CARDINAL64;
-FROM BitByteOps IMPORT ByteAnd;
+FROM SYSTEM IMPORT BYTE, BITSET8, ADDRESS, CARDINAL8;
 FROM Multiboot2 IMPORT
     MULTIBOOT2_BOOTLOADER_MAGIC, MULTIBOOT_INFO_ALIGN, MULTIBOOT_TAG_ALIGN,
     MULTIBOOT_TAG_TYPE_END, MULTIBOOT_TAG_TYPE_FRAMEBUFFER,
     MULTIBOOT_FRAMEBUFFER_TYPE_RGB,
     MultibootTag, MultibootTagPtr,
     MultibootTagFramebuffer, MultibootTagFramebufferPtr;
+FROM Main IMPORT Main;
 
 CONST
     COM1 = 3F8H;
@@ -21,6 +21,15 @@ TYPE
         alpha: BYTE;
     END;
     Pixel32Ptr = POINTER TO Pixel32;
+
+(*
+   ByteAnd - returns a bitwise (left AND right)
+*)
+
+PROCEDURE ByteAnd (left, right: BYTE): BYTE;
+BEGIN
+   RETURN VAL(BYTE, VAL(BITSET8, left) * VAL(BITSET8, right));
+END ByteAnd;
 
 PROCEDURE HCF;
 BEGIN
@@ -116,16 +125,17 @@ BEGIN
     END;
 END SerialWriteLongCardHex;
 
-PROCEDURE KMain(magic, infoAddr: LONGCARD);
+PROCEDURE KernelMain(magic, infoAddr: LONGCARD);
 VAR
     tag: MultibootTagPtr;
     fbTag: MultibootTagFramebufferPtr;
     pixel: Pixel32Ptr;
     fbAddr: LONGCARD;
-    pitch, width, height: CARDINAL32;
+    pitch, width, height: CARDINAL;
     bpp: CARDINAL8;
-    row, col: CARDINAL32;
+    row, col: CARDINAL;
     rowAddr: LONGCARD;
+    emptyArgs: ARRAY [0..0] OF ARRAY [0..0] OF CHAR;
 BEGIN
     SerialInit;
     SerialWriteString("Hello, World from Modula-2 Kernel!");
@@ -186,8 +196,8 @@ BEGIN
     SerialWriteLongCardHex(fbAddr);
     SerialWriteChar(BYTE(10));
 
-    (* ---- Fill the framebuffer with blue (32 bpp only) ---- *)
-    IF bpp = 32 THEN
+    (* ---- Fill the framebuffer with an RGB gradient (32 bpp only) ---- *)
+    IF bpp = VAL(CARDINAL8, 32) THEN
         FOR row := 0 TO height - 1 DO
             rowAddr := fbAddr + VAL(LONGCARD, row) * VAL(LONGCARD, pitch);
             FOR col := 0 TO width - 1 DO
@@ -214,8 +224,8 @@ BEGIN
     END;
     SerialWriteChar(BYTE(10));
 
-    HCF; (* Halt the CPU after printing the messages *)
+    Main(0, NIL); (* Call the main procedure from Main.mod *)
 
-END KMain;
+END KernelMain;
 
-END Kernel.
+END ArchMain.

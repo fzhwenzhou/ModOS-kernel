@@ -1,4 +1,7 @@
-# Makefile -- Build Modula-2 library modules in libs/
+# Makefile -- Build Modula-2 libc modules in libc/
+#
+# Each sub-module of libc (string, stdlib, stdio, ...) compiles
+# to its own .o file.  Add new modules here as they are created.
 
 M2      := gm2
 M2FLAGS := -fno-exceptions -fno-wideset -mcmodel=large -flibs=min \
@@ -6,13 +9,10 @@ M2FLAGS := -fno-exceptions -fno-wideset -mcmodel=large -flibs=min \
 
 .PHONY: all clean
 
-all: BitByteOps.o libc.o
+all: string.o
 
 # ---- Modula-2 compilation ----
-libc.o: libc.mod libc.def
-	$(M2) $(M2FLAGS) -c -o $@ $<
-
-BitByteOps.o: BitByteOps.mod BitByteOps.def
+string.o: string.mod string.def
 	$(M2) $(M2FLAGS) -c -o $@ $<
 
 # ---- Clean ----

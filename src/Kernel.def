@@ -1,5 +1,0 @@
-DEFINITION MODULE Kernel;
- 
-PROCEDURE KMain(Magic, InfoAddr: LONGCARD);
-
-END Kernel.

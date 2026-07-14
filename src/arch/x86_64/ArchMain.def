@@ -1,0 +1,5 @@
+DEFINITION MODULE ArchMain;
+ 
+PROCEDURE KernelMain(Magic, InfoAddr: LONGCARD);
+
+END ArchMain.

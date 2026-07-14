@@ -1,0 +1,50 @@
+DEFINITION MODULE BitByteOps;
+
+FROM SYSTEM IMPORT BYTE;
+
+(*
+    ByteAnd - returns a bitwise (left AND right)
+*)
+PROCEDURE ByteAnd(left, right: BYTE): BYTE;
+
+(*
+    ByteOr - returns a bitwise (left OR right)
+*)
+PROCEDURE ByteOr (left, right: BYTE): BYTE;
+
+(*
+    ByteXor - returns a bitwise (left XOR right)
+*)
+PROCEDURE ByteXor(left, right: BYTE): BYTE;
+
+(*
+    ByteNot - returns a bitwise NOT of the input
+*)
+PROCEDURE ByteNot(input: BYTE): BYTE;
+
+(*
+    ByteShl - returns the input byte shifted left by the specified number of bits
+*)
+PROCEDURE ByteShl (input: BYTE; count: CARDINAL): BYTE;
+
+(*
+    ByteShr - returns the input byte shifted right by the specified number of bits
+*)
+PROCEDURE ByteShr (input: BYTE; count: CARDINAL): BYTE;
+
+(*
+    ByteSar - returns the input byte shifted right by the specified number of bits (arithmetic shift)
+*)
+PROCEDURE ByteSar (input: BYTE; count: CARDINAL): BYTE;
+
+(*
+    ByteRor - returns the input byte rotated right by the specified number of bits
+*)
+PROCEDURE ByteRor (input: BYTE; count: CARDINAL): BYTE;
+
+(*
+    ByteRol - returns the input byte rotated left by the specified number of bits
+*)
+PROCEDURE ByteRol (input: BYTE; count: CARDINAL): BYTE;
+
+END BitByteOps.

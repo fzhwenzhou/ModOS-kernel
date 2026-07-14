@@ -205,8 +205,8 @@ long_mode_entry:
     mov    edi, [rax]          # rdi = magic (zero-extended from 32-bit)
     mov    esi, [rax + 4]      # rsi = mbi addr (zero-extended from 32-bit)
 
-    # Call Kernel_KMain(magic, mbi_addr)
-    call   Kernel_KMain
+    # Call ArchMain_KernelMain(magic, mbi_addr)
+    call   ArchMain_KernelMain
 
 .halt:
     hlt
