@@ -22,7 +22,7 @@ boot/boot.o: boot/boot.S
 # ---- Modula-2 compilation ----
 # ArchMain.mod imports from boot/ (Multiboot2) and ../../ (Main)
 ArchMain.o: ArchMain.mod ArchMain.def boot/Multiboot2.def
-	$(M2) $(M2FLAGS) -Iboot -I../../ -c -o $@ $<
+	$(M2) $(M2FLAGS) -Iboot -I../../ -Ilibm2 -c -o $@ $<
 
 # ---- Delegate to libm2/ ----
 libm2-submake:

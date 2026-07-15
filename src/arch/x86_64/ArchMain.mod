@@ -8,6 +8,7 @@ FROM Multiboot2 IMPORT
     MultibootTag, MultibootTagPtr,
     MultibootTagFramebuffer, MultibootTagFramebufferPtr;
 FROM Main IMPORT Main;
+FROM BitByteOps IMPORT ByteAnd;
 
 CONST
     COM1 = 3F8H;
@@ -21,15 +22,6 @@ TYPE
         alpha: BYTE;
     END;
     Pixel32Ptr = POINTER TO Pixel32;
-
-(*
-   ByteAnd - returns a bitwise (left AND right)
-*)
-
-PROCEDURE ByteAnd (left, right: BYTE): BYTE;
-BEGIN
-   RETURN VAL(BYTE, VAL(BITSET8, left) * VAL(BITSET8, right));
-END ByteAnd;
 
 PROCEDURE HCF;
 BEGIN
