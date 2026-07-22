@@ -70,10 +70,9 @@ Limine (firmware)
 
 | Tool | Path |
 |------|------|
-| x86_64-elf binutils | `/home/naonao/x86_64-elf-tools` |
 | GNU Modula-2 (gm2) | part of GCC 16.1.0 |
-| Limine binaries | `/home/naonao/limine-binary` |
-| OVMF (UEFI) | `/home/naonao/edk2-ovmf` |
+| Limine binaries | `../limine-binary` |
+| OVMF (UEFI) | `../edk2-ovmf` |
 | xorriso | system package |
 | QEMU | system package |
 
@@ -88,7 +87,6 @@ make clean    # Remove all build artifacts
 
 # Override architecture or toolchain
 ARCH=aarch64 ./build.sh
-TOOLS=/custom/path ./build.sh
 ```
 
 ## Running
