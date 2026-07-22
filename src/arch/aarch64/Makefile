@@ -4,10 +4,9 @@
 # Stub — add aarch64 boot code, modules, and linker script here.
 
 ARCH    ?= aarch64
-TOOLS   ?= /home/naonao/$(ARCH)-elf-tools
 
-AS      := $(TOOLS)/bin/$(ARCH)-elf-as
-M2      := gm2
+AS      := $(ARCH)-elf-as
+M2      := $(ARCH)-linux-gnu-gm2
 
 M2FLAGS := -fno-exceptions -fno-wideset -flibs=min -O2
 

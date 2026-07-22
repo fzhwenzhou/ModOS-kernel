@@ -13,9 +13,7 @@ set -euo pipefail
 # Configuration — override via environment variables
 # ------------------------------------------------------------------
 ARCH="${ARCH:-x86_64}"
-TOOLS="${TOOLS:-/home/naonao/${ARCH}-elf-tools}"
-LIMINE="${LIMINE:-/home/naonao/limine-binary}"
-OVMF="${OVMF:-/home/naonao/edk2-ovmf}"
+LIMINE="${LIMINE:-../limine-binary}"
 
 KERNEL="kernel.elf"
 ISO="limine.iso"
@@ -35,7 +33,7 @@ fi
 # Step 1: Build the kernel ELF
 # ------------------------------------------------------------------
 echo "=== Building kernel (${ARCH}) ==="
-make ARCH="${ARCH}" TOOLS="${TOOLS}"
+make ARCH="${ARCH}"
 
 # ------------------------------------------------------------------
 # Step 2: Package into bootable ISO

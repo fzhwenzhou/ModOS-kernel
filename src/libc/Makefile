@@ -3,7 +3,9 @@
 # Each sub-module of libc (string, stdlib, stdio, ...) compiles
 # to its own .o file.  Add new modules here as they are created.
 
-M2      := gm2
+ARCH     ?= x86_64
+
+M2      := $(ARCH)-linux-gnu-gm2
 M2FLAGS := -fno-exceptions -fno-wideset -mcmodel=large -flibs=min \
            -mno-red-zone -mno-mmx -mno-sse -O2
 

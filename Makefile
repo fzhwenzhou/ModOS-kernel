@@ -7,16 +7,14 @@
 #   make                # build kernel.elf
 #   make clean          # remove all build artifacts
 #   make ARCH=arch      # override architecture (default: x86_64)
-#   make TOOLS=path     # override toolchain prefix
 
 ARCH    ?= x86_64
-TOOLS   ?= /home/naonao/$(ARCH)-elf-tools
 
-export ARCH TOOLS
+export ARCH
 
-AS      := $(TOOLS)/bin/$(ARCH)-elf-as
-LD      := $(TOOLS)/bin/$(ARCH)-elf-ld
-M2      := gm2
+AS      := $(ARCH)-elf-as
+LD      := $(ARCH)-elf-ld
+M2      := $(ARCH)-linux-gnu-gm2
 
 export AS M2
 

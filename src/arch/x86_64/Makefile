@@ -3,10 +3,9 @@
 # ARCH, TOOLS, AS, M2, M2FLAGS are inherited from src/Makefile.
 
 ARCH     ?= x86_64
-TOOLS    ?= /home/naonao/$(ARCH)-elf-tools
 
-AS       := $(TOOLS)/bin/$(ARCH)-elf-as
-M2       := gm2
+AS       := $(ARCH)-elf-as
+M2       := $(ARCH)-linux-gnu-gm2
 
 M2FLAGS  := -fno-exceptions -fno-wideset -flibs=min -O2 \
             -mcmodel=large -mno-red-zone -mno-mmx -mno-sse

@@ -4,10 +4,9 @@
 # Delegates to architecture-specific and libc sub-makes.
 
 ARCH     ?= x86_64
-TOOLS    ?= /home/naonao/$(ARCH)-elf-tools
 
-AS       := $(TOOLS)/bin/$(ARCH)-elf-as
-M2       := gm2
+AS       := $(ARCH)-elf-as
+M2       := $(ARCH)-linux-gnu-gm2
 
 M2FLAGS  := -fno-exceptions -fno-wideset -flibs=min -O2
 
@@ -34,7 +33,7 @@ arch-submake:
 
 # ---- Delegate to libc/ ----
 libc-submake:
-	$(MAKE) -C libc M2=$(M2) M2FLAGS='$(M2FLAGS)'
+	$(MAKE) -C libc ARCH=$(ARCH) M2=$(M2) M2FLAGS='$(M2FLAGS)'
 
 # ---- Clean ----
 clean:

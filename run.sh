@@ -14,7 +14,7 @@ set -euo pipefail
 # ------------------------------------------------------------------
 ARCH="${ARCH:-x86_64}"
 ISO="${ISO:-limine.iso}"
-OVMF="${OVMF:-/home/naonao/edk2-ovmf}"
+OVMF="${OVMF:-../edk2-ovmf}"
 
 # ------------------------------------------------------------------
 # QEMU flags common to all architectures
