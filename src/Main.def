@@ -1,12 +1,10 @@
 DEFINITION MODULE Main;
 
-FROM SYSTEM IMPORT ADDRESS;
-
 (*
     Main - entry point for the Modula-2 kernel.
     argc: number of command-line arguments
     argv: pointer to an array of command-line arguments
 *)
-PROCEDURE Main(argc: INTEGER; argv: ADDRESS);
+PROCEDURE Main();
 
 END Main.

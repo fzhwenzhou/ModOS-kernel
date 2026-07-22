@@ -35,9 +35,6 @@ case "${ARCH}" in
     x86_64)
         QEMU_FLAGS+=(-bios "${OVMF}/ovmf-code-x86_64.fd")
         ;;
-    aarch64)
-        QEMU_FLAGS+=(-bios "${OVMF}/ovmf-code-aarch64.fd")
-        ;;
     *)
         echo "Warning: unknown architecture '${ARCH}', no UEFI firmware set"
         ;;

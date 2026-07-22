@@ -216,7 +216,7 @@ BEGIN
     END;
     SerialWriteChar(BYTE(10));
 
-    Main(0, NIL); (* Call the main procedure from Main.mod *)
+    Main; (* Call the main procedure from Main.mod *)
 
 END KernelMain;
 

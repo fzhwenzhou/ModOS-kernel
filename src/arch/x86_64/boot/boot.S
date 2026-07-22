@@ -1,76 +1,56 @@
-# boot.asm - Multiboot2 x86_64 kernel entry point
+# boot.S — Multiboot2 x86_64 higher-half kernel entry point
 # Assembles with: x86_64-elf-as (GNU assembler)
+#
+# Boot flow:
+#   1. 32-bit entry (_start) — save multiboot info, set up page tables
+#      (identity map first 4 GB + higher-half map kernel at 0xFFFFFFFF80000000)
+#   2. Enable PAE → long mode → paging
+#   3. retf to trampoline64 (identity-mapped, 64-bit)
+#   4. trampoline64 → absolute jmp to higher_half_entry (at 0xFFFFFFFF80xxxxxx)
+#   5. higher_half_entry → set up stack, call ArchMain_KernelMain
 
 .intel_syntax noprefix
 
+# =============================================================================
+# Multiboot2 header — must be in the first 32 KB of the image
+# =============================================================================
 .section .multiboot_header, "a"
 .align 8
 
-# Multiboot2 header
 mb2_header:
-    .long 0xE85250D6
-    .long 0
-    .long mb2_end - mb2_header
-    .long -(0xE85250D6 + 0 + (mb2_end - mb2_header))
-
-# Information request tag (type 1) - ask for framebuffer info
-# size = 12 (8 header + 4 for one requested tag)
-.align 8
-    .word 1
-    .word 0
-    .long 12
-    .long 8
-
-# Framebuffer request tag (type 5)
-.align 8
-    .word 5
-    .word 0
-    .long 20
-    .long 1024
-    .long 768
-    .long 32
+    .long 0xE85250D6              # magic
+    .long 0                        # architecture (0 = protected mode i386)
+    .long mb2_end - mb2_header     # header length
+    .long -(0xE85250D6 + 0 + (mb2_end - mb2_header))  # checksum
 
 # End tag (type 0)
 .align 8
-    .word 0
-    .word 0
-    .long 8
+    .word 0                        # type
+    .word 0                        # flags
+    .long 8                        # size
 mb2_end:
 
-#=============================================================================
-# 32-bit entry point
-#=============================================================================
-.section .text, "ax"
+# =============================================================================
+# 32-bit entry point — runs identity-mapped at physical address
+# =============================================================================
+.section .boot.text, "ax"
 .global _start
 .code32
 
 _start:
     # Save multiboot registers to memory (zero_page clobbers edi!)
     lea    edi, [mboot_saved]
-    mov    [edi], eax          # mboot_magic = EAX (0x36d76289)
-    mov    [edi + 4], ebx      # mboot_ebx = EBX (mbi address)
+    mov    [edi], eax              # mboot_magic = EAX (0x36d76289)
+    mov    [edi + 4], ebx          # mboot_ebx = EBX (mbi address)
 
-    # Set up temporary stack
+    # Set up temporary stack (identity-mapped)
     lea    esp, [stack_top]
 
-    # Zero out page table pages
-    lea    eax, [pml4]
-    call   zero_page
-
-    lea    eax, [pdpt]
-    call   zero_page
-
-    lea    eax, [pd0]
-    call   zero_page
-
-    lea    eax, [pd1]
-    call   zero_page
-
-    lea    eax, [pd2]
-    call   zero_page
-
-    lea    eax, [pd3]
-    call   zero_page
+    # =========================================================================
+    # Build identity-mapping page tables (PML4[0], PDPT[0..3], PD0..PD3)
+    # Maps first 4 GB with 2 MB pages — used for framebuffer, multiboot info,
+    # and the boot transition.
+    # =========================================================================
 
     # PML4[0] = pdpt (Present | RW)
     lea    eax, [pdpt]
@@ -102,7 +82,7 @@ _start:
     mov    ecx, 512
 1:  mov    ebx, edx
     shl    ebx, 21
-    or     ebx, 0x83
+    or     ebx, 0x83               # Present | RW | Huge
     mov    [eax + edx * 8], ebx
     inc    edx
     loop   1b
@@ -143,7 +123,35 @@ _start:
     cmp    ecx, 512
     jb     4b
 
+    # =========================================================================
+    # Build higher-half page tables
+    #
+    # Virtual 0xFFFFFFFF80000000 maps to physical 0x0.
+    #   PML4 index:   (0xFFFFFFFF80000000 >> 39) & 0x1FF = 511
+    #   PDPT index:   (0xFFFFFFFF80000000 >> 30) & 0x1FF = 510
+    #   PD index:     (0xFFFFFFFF80000000 >> 21) & 0x1FF = 0
+    #
+    # We map the first 2 MB (physical 0x0 – 0x200000) to cover the kernel
+    # image which is loaded at physical 1 MB.
+    # =========================================================================
+
+    # PML4[511] = pdpt_high (Present | RW)
+    lea    eax, [pdpt_high]
+    or     eax, 0x3
+    mov    [pml4 + 511 * 8], eax
+
+    # PDPT_high[510] = pd_high (Present | RW)
+    lea    eax, [pd_high]
+    or     eax, 0x3
+    mov    [pdpt_high + 510 * 8], eax
+
+    # PD_high[0] = 2 MB page at physical 0x0 (Present | RW | Huge)
+    mov    dword ptr [pd_high], 0x83
+    mov    dword ptr [pd_high + 4], 0
+
+    # =========================================================================
     # Enable PAE (CR4.PAE = 1)
+    # =========================================================================
     mov    eax, cr4
     or     eax, (1 << 5)
     mov    cr4, eax
@@ -163,31 +171,22 @@ _start:
     or     eax, (1 << 31)
     mov    cr0, eax
 
-    # Load GDT with 64-bit code segment
+    # =========================================================================
+    # Transition to 64-bit mode via push + retf
+    # The target (trampoline64) is in .boot.text — identity-mapped, fits in 32 bits.
+    # =========================================================================
     lgdt   [gdt64_ptr]
 
-    # Transition to 64-bit mode via push + retf
-    # (more reliable than a far jump in some emulators)
     push   0x08                    # 64-bit code segment selector
-    lea    eax, [long_mode_entry]
-    push   eax                     # target address
+    lea    eax, [trampoline64]
+    push   eax                     # target address (identity-mapped)
     retf
 
-# Helper: zero a page (uses rep stosd)
-# eax = start address
-zero_page:
-    mov    edi, eax
-    xor    eax, eax
-    mov    ecx, 1024                  # 4096 / 4
-    cld
-    rep stosd
-    ret
-
-#=============================================================================
-# 64-bit entry point
-#=============================================================================
+# =============================================================================
+# 64-bit trampoline — still identity-mapped; jumps to higher-half
+# =============================================================================
 .code64
-long_mode_entry:
+trampoline64:
     # Set up data segments
     mov    ax, 0x10
     mov    ds, ax
@@ -196,14 +195,41 @@ long_mode_entry:
     mov    gs, ax
     mov    ss, ax
 
-    # Set up stack
+    # Set up temporary 64-bit stack (identity-mapped, still accessible)
     lea    rsp, [stack_top]
     and    rsp, ~15
 
-    # Restore multiboot registers from saved memory
-    lea    rax, [mboot_saved]
-    mov    edi, [rax]          # rdi = magic (zero-extended from 32-bit)
-    mov    esi, [rax + 4]      # rsi = mbi addr (zero-extended from 32-bit)
+    # Absolute jump to the higher-half entry point
+    mov    rax, offset higher_half_entry
+    jmp    rax
+
+# =============================================================================
+# Higher-half 64-bit entry point — kernel runs at 0xFFFFFFFF80xxxxxx
+# =============================================================================
+.section .text, "ax"
+.code64
+higher_half_entry:
+    # Reload segment registers (still using the same GDT, which is fine
+    # because 64-bit mode ignores segment bases for CS/DS/ES/SS)
+    mov    ax, 0x10
+    mov    ds, ax
+    mov    es, ax
+    mov    fs, ax
+    mov    gs, ax
+    mov    ss, ax
+
+    # Set up higher-half stack.  We use the boot stack area via its
+    # identity-mapped physical address.  The identity mapping is still
+    # active so this is safe.
+    mov    rsp, offset stack_top
+    and    rsp, ~15
+
+    # Restore multiboot registers from saved memory.
+    # mboot_saved is in .boot.data (low address).  Use absolute
+    # addressing since RIP-relative displacement would overflow.
+    mov    rax, offset mboot_saved
+    mov    edi, [rax]              # rdi = magic
+    mov    esi, [rax + 4]          # rsi = mbi addr
 
     # Call ArchMain_KernelMain(magic, mbi_addr)
     call   ArchMain_KernelMain
@@ -212,10 +238,10 @@ long_mode_entry:
     hlt
     jmp    .halt
 
-#=============================================================================
+# =============================================================================
 # GDT (must be 8-byte aligned!)
-#=============================================================================
-.section .data
+# =============================================================================
+.section .boot.data, "aw"
 .align 8
 gdt64_start:
     .quad 0x0000000000000000        # null descriptor (0x00)
@@ -224,7 +250,7 @@ gdt64_start:
     .word 0xFFFF                    # limit 0-15
     .word 0x0000                    # base 0-15
     .byte 0x00                      # base 16-23
-    .byte 0x9A                      # access byte: P=1, DPL=0, S=1, code, exec/read
+    .byte 0x9A                      # access: P=1, DPL=0, S=1, code, exec/read
     .byte 0xAF                      # flags: G=1, L=1, D=0, limit 16-19=0xF
     .byte 0x00                      # base 24-31
 
@@ -232,7 +258,7 @@ gdt64_start:
     .word 0x0000                    # limit 0-15
     .word 0x0000                    # base 0-15
     .byte 0x00                      # base 16-23
-    .byte 0x92                      # access byte: P=1, DPL=0, S=1, data, read/write
+    .byte 0x92                      # access: P=1, DPL=0, S=1, data, read/write
     .byte 0xAF                      # flags: G=1, L=0, D=0, limit 16-19=0xF
     .byte 0x00                      # base 24-31
 gdt64_end:
@@ -241,10 +267,15 @@ gdt64_ptr:
     .word gdt64_end - gdt64_start - 1   # limit
     .long gdt64_start                   # base (32-bit pointer for 32-bit mode)
 
-#=============================================================================
-# BSS
-#=============================================================================
-.section .bss
+# Saved multiboot registers
+.align 8
+mboot_saved:
+    .skip 8                       # [0..3] = magic (EAX), [4..7] = mbi_addr (EBX)
+
+# =============================================================================
+# Boot BSS — page tables and early stack
+# =============================================================================
+.section .boot.bss, "aw"
 .align 4096
 pml4:
     .skip 4096
@@ -259,13 +290,14 @@ pd2:
 pd3:
     .skip 4096
 
+# Higher-half page tables
+.align 4096
+pdpt_high:
+    .skip 4096
+pd_high:
+    .skip 4096
+
 .align 16
 stack_bottom:
-    .skip 32768
+    .skip 32768                   # 32 KB stack
 stack_top:
-
-# Saved multiboot registers
-.section .data
-.align 8
-mboot_saved:
-    .skip 8                     # [0..3] = magic (EAX), [4..7] = mbi_addr (EBX)

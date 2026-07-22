@@ -7,7 +7,7 @@
 ## Features
 
 - **Multiboot2-compliant** — boots via the [Limine](https://github.com/limine-bootloader/limine) bootloader
-- **x86_64 long mode** — 64-bit with 4-level paging (identity-mapped first 4 GB)
+- **x86_64 long mode** — 64-bit with 4-level paging (identity-mapped first 4 GB + higher-half kernel at 0xFFFFFFFF80000000)
 - **Serial I/O** — COM1 UART at 38400 baud for debug output
 - **Framebuffer** — reads the Multiboot2 framebuffer tag and fills the display with an RGB gradient
 - **100% Modula-2** — no C code anywhere in the kernel; all runtime functions (`memcpy`, `memset`, `memmove`, `memcmp`) are implemented in pure Modula-2
@@ -27,8 +27,6 @@
 │   ├── Main.mod             # Application-level main (HLT loop)
 │   ├── stub.S               # Assembly stubs for gm2 runtime
 │   ├── arch/
-│   │   ├── aarch64/
-│   │   │   └── Makefile     # Stub — ready for ARM64 port
 │   │   └── x86_64/
 │   │       ├── Makefile     # Compiles ArchMain.o, boot/boot.S, delegates to libm2/
 │   │       ├── ArchMain.def # x86_64 arch entry point definition
@@ -54,9 +52,11 @@
 ```
 Limine (firmware)
   └── boot.S (32-bit entry)
-      ├── Set up page tables (PML4, PDPT, PD0-3)
+      ├── Set up page tables (PML4, PDPT, PD0-3 for identity map;
+      │   PML4[511], PDPT[510], PD_high for higher-half map)
       ├── Enable PAE + long mode + paging
-      ├── Load GDT, transition to 64-bit
+      ├── Load GDT, transition to 64-bit (trampoline64, identity-mapped)
+      ├── Absolute jump to higher_half_entry (0xFFFFFFFF80xxxxxx)
       └── Call ArchMain_KernelMain(magic, mbi_addr)
             └── ArchMain.mod
                 ├── SerialInit (COM1)
@@ -157,12 +157,17 @@ All modules use `FOR "C"` linkage and `EXPORT UNQUALIFIED` so their symbols are 
 
 ## Memory Layout
 
-| Region | Address |
-|--------|---------|
-| Kernel load | `0x100000` |
-| Framebuffer | `0x80000000` (set by firmware) |
-| Stack | ~`0x8000` (in BSS) |
-| Page tables | BSS (6 × 4 KB pages) |
+| Region | Physical Address | Virtual Address |
+|--------|-----------------|-----------------|
+| Kernel load | `0x100000` | `0xFFFFFFFF80100000` |
+| Framebuffer | `0x80000000` (set by firmware) | identity-mapped (`0x80000000`) |
+| Boot stack | `0x110000` (in BSS) | identity-mapped |
+| Page tables | `0x101000` (in BSS) | identity-mapped |
+
+The kernel is a **higher-half kernel**: it is loaded at physical 1 MB but
+linked to run at `0xFFFFFFFF80000000`.  The first 4 GB are identity-mapped
+so that the framebuffer, multiboot info structures, and boot trampoline
+remain accessible via their physical addresses.
 
 ## Building from Scratch
 
