@@ -9,6 +9,7 @@ FROM Limine IMPORT
     limineFramebufferRequest;
 FROM Main IMPORT Main;
 FROM BitByteOps IMPORT ByteAnd;
+FROM GDT IMPORT GDTInit;
 
 CONST
     COM1 = 3F8H;
@@ -147,6 +148,17 @@ BEGIN
         SerialWriteChar(BYTE(10));
         HCF;
     END;
+
+    (* ---- Set up our own GDT and TSS ---------------------------
+       Limine enters with a bootloader-owned GDT (CS=0x28, DS=0x30).
+       Replace it with a kernel-owned GDT that includes a 64-bit TSS
+       providing rsp0 and IST stacks -- required before we enable
+       interrupts or handle exceptions. *)
+    SerialWriteString("Loading kernel GDT and TSS...");
+    SerialWriteChar(BYTE(10));
+    GDTInit();
+    SerialWriteString("GDT and TSS loaded.");
+    SerialWriteChar(BYTE(10));
 
     (* ---- Check framebuffer response ---- *)
     IF limineFramebufferRequest.response = NIL THEN

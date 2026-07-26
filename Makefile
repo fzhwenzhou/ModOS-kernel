@@ -40,6 +40,7 @@ KERNEL := kernel.elf
 ARCH_OBJS := \
     src/arch/$(ARCH)/boot/boot.o \
     src/arch/$(ARCH)/ArchMain.o \
+    src/arch/$(ARCH)/GDT.o \
     src/arch/$(ARCH)/libm2/BitByteOps.o
 
 KERNEL_OBJS := \

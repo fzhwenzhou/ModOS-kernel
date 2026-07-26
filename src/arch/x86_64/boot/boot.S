@@ -144,5 +144,44 @@ limine_requests_end_marker:
     .quad 0xadc0e0531bb10d03
     .quad 0x9572709f31764c62
 
+/* =============================================================================
+ * GDT/TSS static storage
+ *
+ * Modula-2's gm2 compiler sometimes omits BSS symbols for very large static
+ * arrays (> ~56 KiB total seen in practice) when they are not observed to be
+ * referenced at compile time.  We therefore place the TSS (104 B), the ring-0
+ * kernel stack (32 KiB) and the seven IST stacks (7 x 8 KiB = 56 KiB) in the
+ * assembly file and provide gm2-mangled aliases for them (GDT_VarName).
+ * ============================================================================= */
+
+.equ KERNEL_STACK_SIZE, 32768
+.equ IST_STACK_SIZE,    8192
+.equ TSS_SIZE,          104
+.equ GDT_NENTRIES,      7
+.equ GDT_SIZE,          GDT_NENTRIES * 8
+
+.bss
+.align 16
+
+.global GDT_tss
+.set    GDT_tss, gdt_tss
+gdt_tss:
+    .skip TSS_SIZE
+
+.global GDT_gdt
+.set    GDT_gdt, gdt_table
+gdt_table:
+    .skip GDT_SIZE
+
+.global GDT_kernelStack
+.set    GDT_kernelStack, gdt_kernelStack
+gdt_kernelStack:
+    .skip KERNEL_STACK_SIZE
+
+.global GDT_istStacks
+.set    GDT_istStacks, gdt_istStacks
+gdt_istStacks:
+    .skip IST_STACK_SIZE * 7
+
 /* Mark stack as non-executable to silence linker warning */
 .section .note.GNU-stack, "", @progbits

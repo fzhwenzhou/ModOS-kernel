@@ -14,20 +14,24 @@ M2FLAGS  := -fno-exceptions -fno-wideset -flibs=min -O2 \
 #   ../../boot/  — architecture-independent Limine def
 #   ../../       — Main module
 #   libm2/       — BitByteOps module
-M2INCLUDES := -I../../boot -I../../ -Ilibm2
+M2INCLUDES := -I. -I../../boot -I../../ -Ilibm2
 
 .PHONY: all clean libm2-submake
 
-all: boot/boot.o ArchMain.o libm2-submake
+all: boot/boot.o ArchMain.o GDT.o libm2-submake
 
 # ---- Assembly ----
 boot/boot.o: boot/boot.S
 	$(AS) -o $@ $<
 
 # ---- Modula-2 compilation ----
+# GDT.mod imports from libm2/ (BitByteOps).
+GDT.o: GDT.mod GDT.def libm2-submake
+	$(M2) $(M2FLAGS) $(M2INCLUDES) -c -o $@ $<
+
 # ArchMain.mod imports from ../../boot/ (Limine),
-# ../../ (Main), and libm2/ (BitByteOps).
-ArchMain.o: ArchMain.mod ArchMain.def ../../boot/Limine.def
+# ../../ (Main), libm2/ (BitByteOps), and ./ (GDT).
+ArchMain.o: ArchMain.mod ArchMain.def ../../boot/Limine.def GDT.def
 	$(M2) $(M2FLAGS) $(M2INCLUDES) -c -o $@ $<
 
 # ---- Delegate to libm2/ ----

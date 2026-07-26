@@ -8,9 +8,10 @@
 
 - **Limine boot protocol** — native [Limine](https://github.com/limine-bootloader/limine) protocol support (no Multiboot2 compatibility shim needed; portable beyond x86)
 - **x86_64 long mode** — entered directly by Limine in 64-bit mode with paging enabled (higher-half kernel at 0xFFFFFFFF80000000)
+- **Kernel-owned GDT & 64-bit TSS** — replaces the Limine-provided GDT with seven descriptors (null, kernel code/data, user code/data, TSS low/high) and installs a 104-byte Task State Segment with a ring-0 stack (32 KiB) and seven dedicated IST stacks (7 × 8 KiB) for critical exception handlers
 - **Serial I/O** — COM1 UART at 38400 baud for debug output
 - **Framebuffer** — reads the Limine framebuffer response and fills the display with RGB stripes
-- **100% Modula-2** — no C code anywhere in the kernel; all runtime functions (`memcpy`, `memset`, `memmove`, `memcmp`) are implemented in pure Modula-2
+- **100% Modula-2** — no C code anywhere in the kernel; all runtime functions (`memcpy`, `memset`, `memmove`, `memcmp`) are implemented in pure Modula-2; privileged x86 instructions (lgdt, ltr, far return) are issued via Modula-2 inline assembly
 - **Modula-2 kernel modules** — clean separation of concerns via `DEFINITION` / `IMPLEMENTATION` modules
 - **Hierarchical build system** — architecture-aware Makefile hierarchy with `ARCH` and `TOOLS` inheritance
 
@@ -30,12 +31,14 @@
 │   │   └── Limine.def       # Limine protocol — types, constants, externed request vars
 │   ├── arch/
 │   │   └── x86_64/
-│   │       ├── Makefile     # Compiles ArchMain.o, boot/boot.S, delegates to libm2/
+│   │       ├── Makefile     # Compiles ArchMain.o, GDT.o, boot/boot.S, delegates to libm2/
 │   │       ├── ArchMain.def # x86_64 arch entry point definition
-│   │       ├── ArchMain.mod # x86_64 arch entry point (serial, framebuffer)
+│   │       ├── ArchMain.mod # x86_64 arch entry point (serial, framebuffer, calls GDTInit)
+│   │       ├── GDT.def      # GDT + 64-bit TSS module definition
+│   │       ├── GDT.mod      # GDT + TSS setup (Modula-2 with inline asm for lgdt/ltr)
 │   │       ├── linker.ld    # Linker script (higher-half at 0xFFFFFFFF80000000)
 │   │       ├── boot/
-│   │       │   ├── boot.S   # Limine request structures + 64-bit entry (GAS, Intel syntax)
+│   │       │   ├── boot.S   # Limine request structures + 64-bit entry + GDT/TSS BSS (GAS, Intel syntax)
 │   │       └── libm2/
 │   │           ├── Makefile
 │   │           ├── BitByteOps.def  # Bit manipulation library
@@ -61,9 +64,16 @@ Limine (UEFI / BIOS)
       └── ArchMain.mod
           ├── SerialInit (COM1)
           ├── Verify Limine base revision == 6
+          ├── GDTInit  (GDT.mod — load kernel-owned GDT + 64-bit TSS)
+          │     ├── Assemble 7 GDT descriptors (null / kernel code+data /
+          │     │   user code+data / TSS low+high)
+          │     ├── Populate TSS with rsp0 = top of ring-0 stack,
+          │     │   ist1..ist7 = top of seven 8 KiB IST stacks
+          │     ├── lgdt, long-return to reload CS, set DS/ES/SS/FS/GS,
+          │     └── ltr to load the TSS selector 0x28
           ├── Read framebuffer response from limineFramebufferRequest
           ├── Fill framebuffer with RGB stripes
-          └── Call Main.Main(0, emptyArgs)
+          └── Call Main.Main()
                 └── Main.mod (HLT loop)
 ```
 
@@ -113,8 +123,9 @@ Makefile (top-level)
       ├── stub.o        (from stub.S)
       ├── Main.o        (from Main.mod)
       ├── arch/$(ARCH)/Makefile   ← architecture-specific
-      │   ├── boot/boot.o         (from boot.S — Limine requests + entry)
+      │   ├── boot/boot.o         (from boot.S — Limine requests + entry + GDT/TSS BSS)
       │   ├── ArchMain.o          (from ArchMain.mod)
+      │   ├── GDT.o               (from GDT.mod — GDT + TSS setup)
       │   └── libm2/Makefile
       │       └── BitByteOps.o
       └── libc/Makefile

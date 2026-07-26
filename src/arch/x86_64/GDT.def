@@ -1,0 +1,36 @@
+DEFINITION MODULE GDT;
+
+(* GDT -- Global Descriptor Table and Task State Segment setup for x86_64.
+
+   On entry from Limine the CPU is already in long mode with a bootloader-
+   provided GDT.  This module replaces it with a kernel-owned GDT that
+   contains:
+
+       [0] Null descriptor                selector 0x00
+       [1] Kernel code  (Ring 0, 64-bit)  selector 0x08
+       [2] Kernel data  (Ring 0)          selector 0x10
+       [3] User data    (Ring 3)          selector 0x18
+       [4] User code    (Ring 3, 64-bit)  selector 0x20
+       [5] TSS descriptor low             selector 0x28
+       [6] TSS descriptor high            (continuation of [5])
+
+   and a 64-bit Task State Segment (TSS) that provides:
+       rsp0     -- ring-0 stack pointer loaded on privilege change to ring 0
+       rsp1/2   -- ring-1 and ring-2 stack pointers (unused, set to rsp0)
+       ist1..ist7 -- Interrupt Stack Table slots; each points to a dedicated
+                     8 KiB stack so critical exceptions (DF, NMI, MC) can
+                     switch to a known-good stack automatically.
+
+   The GDT table itself, the TSS, the 32 KiB ring-0 stack, and the seven
+   IST stacks are all placed in BSS by boot/boot.S.  This module's GDTInit
+   builds descriptors in place, issues LGDT, reloads CS/DS/ES/SS, and loads
+   the task register with LTR.
+
+   Call GDTInit() exactly once, early in kernel startup, before enabling
+   interrupts or handling exceptions.  Written in pure Modula-2; the few
+   privileged instructions (lgdt, ltr, far return to reload CS) are issued
+   via inline assembly. *)
+
+PROCEDURE GDTInit();
+
+END GDT.
