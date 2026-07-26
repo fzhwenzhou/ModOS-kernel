@@ -1,5 +1,10 @@
 DEFINITION MODULE ArchMain;
- 
-PROCEDURE KernelMain(Magic, InfoAddr: LONGCARD);
+
+(* Entry point called from boot.S after Limine handoff.
+   On entry the CPU is in 64-bit long mode, paging enabled, interrupts
+   disabled.  Limine request/response structures are available directly
+   as the variables imported from the Limine definition module. *)
+
+PROCEDURE KernelMain();
 
 END ArchMain.

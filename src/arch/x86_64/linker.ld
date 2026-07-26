@@ -1,70 +1,54 @@
-/* linker.ld — Linker script for higher-half x86_64 kernel
+/* linker.ld — Linker script for Limine-booted x86_64 higher-half kernel
  *
- * Boot sections (multiboot header, 32-bit entry, trampoline, GDT,
- * page tables, early stack) are linked and loaded at 1 MB physical.
+ * With Limine there is no need for a separate 32-bit boot trampoline
+ * or manually-constructed page tables — the bootloader enters the
+ * kernel directly in 64-bit long mode with paging enabled and the
+ * kernel mapped at its linked higher-half address.
  *
- * Kernel sections (.text, .data, .bss) are linked at the higher-half
- * virtual address (0xFFFFFFFF80100000) but loaded right after the
- * boot sections in the physical image.
+ * Limine request structures are placed in a dedicated, retained
+ * section in the required order: start marker, requests, end marker.
  */
 OUTPUT_FORMAT(elf64-x86-64)
-ENTRY(_start)
+ENTRY(ArchMain_KernelMain)
 
 VIRT_BASE = 0xFFFFFFFF80000000;
 
 SECTIONS
 {
-    /* ================================================================
-     * Boot sections — low-address (physical = virtual)
-     * ================================================================ */
-    . = 1M;
+    . = VIRT_BASE + 1M;
 
-    .multiboot_header : {
-        *(.multiboot_header)
+    .text ALIGN(4K) : {
+        *(.text .text.*)
     }
 
-    .boot.text : {
-        *(.boot.text)
+    .rodata ALIGN(4K) : {
+        *(.rodata .rodata.*)
+        *(.srodata .srodata.*)
+        *(.sdata2 .sdata2.*)
     }
 
-    .boot.data : {
-        *(.boot.data)
+    .data ALIGN(4K) : {
+        /* Limine request markers and structures — must be kept,
+           and must appear in this exact order. */
+        KEEP(*(.limine_requests_start_marker))
+        KEEP(*(.limine_requests))
+        KEEP(*(.limine_requests_end_marker))
+
+        *(.data .data.*)
+        *(.sdata .sdata.*)
     }
 
-    .boot.bss : {
-        *(.boot.bss)
-    }
-
-    /* Record where the boot image ends in physical memory */
-    . = ALIGN(4K);
-    boot_end_phys = .;
-
-    /* ================================================================
-     * Higher-half kernel sections
-     * ================================================================ */
-    . = VIRT_BASE + boot_end_phys;
-
-    .text : AT(boot_end_phys) {
-        *(.text)
-        *(.text.*)
-    }
-
-    .data : AT(ADDR(.data) - VIRT_BASE) {
-        *(.data)
-        *(.data.*)
-    }
-
-    .bss : AT(ADDR(.bss) - VIRT_BASE) {
+    .bss ALIGN(4K) : {
         *(COMMON)
-        *(.bss)
-        *(.bss.*)
+        *(.bss .bss.*)
+        *(.sbss .sbss.*)
     }
 
-    kernel_end_virt = .;
+    kernel_end = .;
 
     /DISCARD/ : {
         *(.comment)
-        *(.note.*)
+        *(.note.GNU-stack)
         *(.eh_frame)
         *(.debug_*)
     }

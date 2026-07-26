@@ -1,0 +1,851 @@
+(* Limine.def — Definitions for the Limine boot protocol.
+   Based on the limine.h header from the Limine bootloader project.
+   Conforms to Limine protocol base revision 6.
+
+   All pointers are represented as CARDINAL64 since the bootloader
+   populates them with higher-half virtual addresses (HHDM). *)
+
+DEFINITION MODULE Limine;
+
+FROM SYSTEM IMPORT BYTE, CARDINAL8, CARDINAL16, CARDINAL32, CARDINAL64;
+
+(* ========================================================================
+   Magic marker constants
+   ======================================================================== *)
+
+CONST
+    (* Start/end markers for the requests section *)
+    LIMINE_REQUESTS_START_MARKER_0 = 0F6B8F4B3H;
+    LIMINE_REQUESTS_START_MARKER_1 = 0FAB91A69H;
+    LIMINE_REQUESTS_START_MARKER_2 = 0785C6ED0H;
+    LIMINE_REQUESTS_START_MARKER_3 = 0181E920AH;
+
+    LIMINE_REQUESTS_END_MARKER_0 = 0ADC0E053H;
+    LIMINE_REQUESTS_END_MARKER_1 = 09572709FH;
+
+    (* Base revision tag magic *)
+    LIMINE_BASE_REVISION_MAGIC_0 = 0F9562B2DH;
+    LIMINE_BASE_REVISION_MAGIC_1 = 06A7B3849H;
+
+    (* Common magic prefix for all request IDs *)
+    LIMINE_COMMON_MAGIC_0 = 0C7B1DD30H;
+    LIMINE_COMMON_MAGIC_1 = 00A82E883H;
+
+(* ========================================================================
+   Media types
+   ======================================================================== *)
+
+CONST
+    LIMINE_MEDIA_TYPE_GENERIC = 0;
+    LIMINE_MEDIA_TYPE_OPTICAL = 1;
+    LIMINE_MEDIA_TYPE_TFTP    = 2;
+
+(* ========================================================================
+   Firmware types
+   ======================================================================== *)
+
+CONST
+    LIMINE_FIRMWARE_TYPE_X86BIOS = 0;
+    LIMINE_FIRMWARE_TYPE_EFI32   = 1;
+    LIMINE_FIRMWARE_TYPE_EFI64   = 2;
+    LIMINE_FIRMWARE_TYPE_SBI     = 3;
+
+(* ========================================================================
+   Framebuffer constants
+   ======================================================================== *)
+
+CONST
+    LIMINE_FRAMEBUFFER_RGB = 1;
+
+(* ========================================================================
+   Paging mode constants (x86_64)
+   ======================================================================== *)
+
+CONST
+    LIMINE_PAGING_MODE_X86_64_4LVL = 0;
+    LIMINE_PAGING_MODE_X86_64_5LVL = 1;
+    LIMINE_PAGING_MODE_X86_64_MIN  = 0;
+
+    LIMINE_PAGING_MODE_AARCH64_4LVL = 0;
+    LIMINE_PAGING_MODE_AARCH64_5LVL = 1;
+    LIMINE_PAGING_MODE_AARCH64_MIN  = 0;
+
+    LIMINE_PAGING_MODE_RISCV_SV39 = 0;
+    LIMINE_PAGING_MODE_RISCV_SV48 = 1;
+    LIMINE_PAGING_MODE_RISCV_SV57 = 2;
+    LIMINE_PAGING_MODE_RISCV_MIN  = 0;
+
+    LIMINE_PAGING_MODE_LOONGARCH_4LVL = 0;
+    LIMINE_PAGING_MODE_LOONGARCH_MIN  = 0;
+
+(* ========================================================================
+   Memory map entry types
+   ======================================================================== *)
+
+CONST
+    LIMINE_MEMMAP_USABLE                 = 0;
+    LIMINE_MEMMAP_RESERVED               = 1;
+    LIMINE_MEMMAP_ACPI_RECLAIMABLE       = 2;
+    LIMINE_MEMMAP_ACPI_NVS               = 3;
+    LIMINE_MEMMAP_BAD_MEMORY             = 4;
+    LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE = 5;
+    LIMINE_MEMMAP_EXECUTABLE_AND_MODULES = 6;
+    LIMINE_MEMMAP_FRAMEBUFFER            = 7;
+    LIMINE_MEMMAP_RESERVED_MAPPED        = 8;
+
+(* ========================================================================
+   MP (multiprocessor) flags
+   ======================================================================== *)
+
+CONST
+    LIMINE_MP_RESPONSE_X86_64_X2APIC = 1;
+    LIMINE_MP_REQUEST_X86_64_X2APIC  = 1;
+
+(* ========================================================================
+   Internal module flags
+   ======================================================================== *)
+
+CONST
+    LIMINE_INTERNAL_MODULE_REQUIRED   = 1;
+    LIMINE_INTERNAL_MODULE_COMPRESSED = 2;
+
+(* ========================================================================
+   TPM event log formats
+   ======================================================================== *)
+
+CONST
+    LIMINE_TPM_EVENT_LOG_FORMAT_TCG_1_2 = 1;
+    LIMINE_TPM_EVENT_LOG_FORMAT_TCG_2   = 2;
+
+(* ========================================================================
+   Flanterm FB rotation
+   ======================================================================== *)
+
+CONST
+    LIMINE_FLANTERM_FB_ROTATE_0   = 0;
+    LIMINE_FLANTERM_FB_ROTATE_90  = 1;
+    LIMINE_FLANTERM_FB_ROTATE_180 = 2;
+    LIMINE_FLANTERM_FB_ROTATE_270 = 3;
+
+(* ========================================================================
+   Request IDs (tail components after common magic)
+   ======================================================================== *)
+
+CONST
+    (* Bootloader info *)
+    LIMINE_BOOTLOADER_INFO_REQUEST_ID_2 = 0F55038D8H;
+    LIMINE_BOOTLOADER_INFO_REQUEST_ID_3 = 0279426FCH;
+
+    (* Executable command line *)
+    LIMINE_EXECUTABLE_CMDLINE_REQUEST_ID_2 = 04B161536H;
+    LIMINE_EXECUTABLE_CMDLINE_REQUEST_ID_3 = 0B390AD4AH;
+
+    (* Firmware type *)
+    LIMINE_FIRMWARE_TYPE_REQUEST_ID_2 = 08C2F75D9H;
+    LIMINE_FIRMWARE_TYPE_REQUEST_ID_3 = 07045A468H;
+
+    (* Stack size *)
+    LIMINE_STACK_SIZE_REQUEST_ID_2 = 0224EF046H;
+    LIMINE_STACK_SIZE_REQUEST_ID_3 = 0E1CB0FC2H;
+
+    (* HHDM *)
+    LIMINE_HHDM_REQUEST_ID_2 = 048DCF1CBH;
+    LIMINE_HHDM_REQUEST_ID_3 = 063984E95H;
+
+    (* Framebuffer *)
+    LIMINE_FRAMEBUFFER_REQUEST_ID_2 = 09D5827DCH;
+    LIMINE_FRAMEBUFFER_REQUEST_ID_3 = 0A3148604H;
+
+    (* Paging mode *)
+    LIMINE_PAGING_MODE_REQUEST_ID_2 = 095C1A0EDH;
+    LIMINE_PAGING_MODE_REQUEST_ID_3 = 0A4E5CB38H;
+
+    (* MP *)
+    LIMINE_MP_REQUEST_ID_2 = 095A67B81H;
+    LIMINE_MP_REQUEST_ID_3 = 0A0B61B72H;
+
+    (* Memory map *)
+    LIMINE_MEMMAP_REQUEST_ID_2 = 067CF3D9DH;
+    LIMINE_MEMMAP_REQUEST_ID_3 = 0E304ACDFH;
+
+    (* Entry point *)
+    LIMINE_ENTRY_POINT_REQUEST_ID_2 = 013D86C03H;
+    LIMINE_ENTRY_POINT_REQUEST_ID_3 = 02B0CAA89H;
+
+    (* Executable file *)
+    LIMINE_EXECUTABLE_FILE_REQUEST_ID_2 = 0AD97E90EH;
+    LIMINE_EXECUTABLE_FILE_REQUEST_ID_3 = 031EB5D1CH;
+
+    (* Module *)
+    LIMINE_MODULE_REQUEST_ID_2 = 03E7E2797H;
+    LIMINE_MODULE_REQUEST_ID_3 = 0CA1C4F3BH;
+
+    (* RSDP *)
+    LIMINE_RSDP_REQUEST_ID_2 = 0C5E77B6BH;
+    LIMINE_RSDP_REQUEST_ID_3 = 027637845H;
+
+    (* SMBIOS *)
+    LIMINE_SMBIOS_REQUEST_ID_2 = 09E9046F1H;
+    LIMINE_SMBIOS_REQUEST_ID_3 = 0AA4A520FH;
+
+    (* EFI system table *)
+    LIMINE_EFI_SYSTEM_TABLE_REQUEST_ID_2 = 05CEBA516H;
+    LIMINE_EFI_SYSTEM_TABLE_REQUEST_ID_3 = 00A698161H;
+
+    (* TPM event log *)
+    LIMINE_TPM_EVENT_LOG_REQUEST_ID_2 = 098E09FCH;
+    LIMINE_TPM_EVENT_LOG_REQUEST_ID_3 = 0EE8D8775H;
+
+    (* EFI memory map *)
+    LIMINE_EFI_MEMMAP_REQUEST_ID_2 = 07DF62A43H;
+    LIMINE_EFI_MEMMAP_REQUEST_ID_3 = 0A4FCDFB3H;
+
+    (* Date at boot *)
+    LIMINE_DATE_AT_BOOT_REQUEST_ID_2 = 0502746E1H;
+    LIMINE_DATE_AT_BOOT_REQUEST_ID_3 = 0FBC5EC83H;
+
+    (* Executable address *)
+    LIMINE_EXECUTABLE_ADDRESS_REQUEST_ID_2 = 071BA7686H;
+    LIMINE_EXECUTABLE_ADDRESS_REQUEST_ID_3 = 0B2644A48H;
+
+    (* DTB *)
+    LIMINE_DTB_REQUEST_ID_2 = 0B40DDB48H;
+    LIMINE_DTB_REQUEST_ID_3 = 054508149H;
+
+    (* RISC-V BSP hart ID *)
+    LIMINE_RISCV_BSP_HARTID_REQUEST_ID_2 = 01369359FH;
+    LIMINE_RISCV_BSP_HARTID_REQUEST_ID_3 = 02FF2A561H;
+
+    (* Bootloader performance *)
+    LIMINE_BOOTLOADER_PERFORMANCE_REQUEST_ID_2 = 06B50AD9BH;
+    LIMINE_BOOTLOADER_PERFORMANCE_REQUEST_ID_3 = 0DC4C7E88H;
+
+    (* x86_64 keep IOMMU *)
+    LIMINE_X86_64_KEEP_IOMMU_REQUEST_ID_2 = 08EBAABE5H;
+    LIMINE_X86_64_KEEP_IOMMU_REQUEST_ID_3 = 02AA86A59H;
+
+    (* TSC frequency *)
+    LIMINE_TSC_FREQUENCY_REQUEST_ID_2 = 010F2EE1DH;
+    LIMINE_TSC_FREQUENCY_REQUEST_ID_3 = 0F747A2B7H;
+
+    (* Flanterm FB init params *)
+    LIMINE_FLANTERM_FB_INIT_PARAMS_REQUEST_ID_2 = 03259399FH;
+    LIMINE_FLANTERM_FB_INIT_PARAMS_REQUEST_ID_3 = 0E01C1C8CH;
+
+(* ========================================================================
+   Type definitions — UUID and file structures
+   ======================================================================== *)
+
+TYPE
+    (* ---- UUID ---- *)
+    LimineUUID = RECORD
+        a: CARDINAL32;
+        b: CARDINAL16;
+        c: CARDINAL16;
+        d: ARRAY [0..7] OF CARDINAL8;
+    END;
+
+    (* ---- File reference ---- *)
+    LimineFile = RECORD
+        revision:        CARDINAL64;
+        address:         CARDINAL64;
+        size:            CARDINAL64;
+        path:            CARDINAL64;       (* char*  *)
+        string:          CARDINAL64;       (* char*  *)
+        mediaType:       CARDINAL32;
+        unused:          CARDINAL32;
+        tftpIpv4:        ARRAY [0..3] OF CARDINAL8;
+        tftpPort:        CARDINAL32;
+        partitionIndex:  CARDINAL32;
+        mbrDiskId:       CARDINAL32;
+        gptDiskUuid:     LimineUUID;
+        gptPartUuid:     LimineUUID;
+        partUuid:        LimineUUID;
+    END;
+    LimineFilePtr = POINTER TO LimineFile;
+
+(* ========================================================================
+   Bootloader info
+   ======================================================================== *)
+
+TYPE
+    LimineBootloaderInfoResponse = RECORD
+        revision: CARDINAL64;
+        name:     CARDINAL64;           (* char* *)
+        version:  CARDINAL64;           (* char* *)
+    END;
+    LimineBootloaderInfoResponsePtr = POINTER TO LimineBootloaderInfoResponse;
+
+    LimineBootloaderInfoRequest = RECORD
+        id:       ARRAY [0..3] OF CARDINAL64;
+        revision: CARDINAL64;
+        response: LimineBootloaderInfoResponsePtr;
+    END;
+    LimineBootloaderInfoRequestPtr = POINTER TO LimineBootloaderInfoRequest;
+
+(* ========================================================================
+   Executable command line
+   ======================================================================== *)
+
+TYPE
+    LimineExecutableCmdlineResponse = RECORD
+        revision: CARDINAL64;
+        cmdline:  CARDINAL64;           (* char* *)
+    END;
+    LimineExecutableCmdlineResponsePtr = POINTER TO LimineExecutableCmdlineResponse;
+
+    LimineExecutableCmdlineRequest = RECORD
+        id:       ARRAY [0..3] OF CARDINAL64;
+        revision: CARDINAL64;
+        response: LimineExecutableCmdlineResponsePtr;
+    END;
+    LimineExecutableCmdlineRequestPtr = POINTER TO LimineExecutableCmdlineRequest;
+
+(* ========================================================================
+   Firmware type
+   ======================================================================== *)
+
+TYPE
+    LimineFirmwareTypeResponse = RECORD
+        revision:      CARDINAL64;
+        firmwareType:  CARDINAL64;
+    END;
+    LimineFirmwareTypeResponsePtr = POINTER TO LimineFirmwareTypeResponse;
+
+    LimineFirmwareTypeRequest = RECORD
+        id:       ARRAY [0..3] OF CARDINAL64;
+        revision: CARDINAL64;
+        response: LimineFirmwareTypeResponsePtr;
+    END;
+    LimineFirmwareTypeRequestPtr = POINTER TO LimineFirmwareTypeRequest;
+
+(* ========================================================================
+   Stack size
+   ======================================================================== *)
+
+TYPE
+    LimineStackSizeResponse = RECORD
+        revision: CARDINAL64;
+    END;
+    LimineStackSizeResponsePtr = POINTER TO LimineStackSizeResponse;
+
+    LimineStackSizeRequest = RECORD
+        id:        ARRAY [0..3] OF CARDINAL64;
+        revision:  CARDINAL64;
+        response:  LimineStackSizeResponsePtr;
+        stackSize: CARDINAL64;
+    END;
+    LimineStackSizeRequestPtr = POINTER TO LimineStackSizeRequest;
+
+(* ========================================================================
+   HHDM (Higher Half Direct Map)
+   ======================================================================== *)
+
+TYPE
+    LimineHhdmResponse = RECORD
+        revision: CARDINAL64;
+        offset:   CARDINAL64;
+    END;
+    LimineHhdmResponsePtr = POINTER TO LimineHhdmResponse;
+
+    LimineHhdmRequest = RECORD
+        id:       ARRAY [0..3] OF CARDINAL64;
+        revision: CARDINAL64;
+        response: LimineHhdmResponsePtr;
+    END;
+    LimineHhdmRequestPtr = POINTER TO LimineHhdmRequest;
+
+(* ========================================================================
+   Framebuffer
+   ======================================================================== *)
+
+TYPE
+    LimineVideoMode = RECORD
+        pitch:          CARDINAL64;
+        width:          CARDINAL64;
+        height:         CARDINAL64;
+        bpp:            CARDINAL16;
+        memoryModel:    CARDINAL8;
+        redMaskSize:    CARDINAL8;
+        redMaskShift:   CARDINAL8;
+        greenMaskSize:  CARDINAL8;
+        greenMaskShift: CARDINAL8;
+        blueMaskSize:   CARDINAL8;
+        blueMaskShift:  CARDINAL8;
+    END;
+    LimineVideoModePtr = POINTER TO LimineVideoMode;
+
+    LimineFramebuffer = RECORD
+        address:        CARDINAL64;       (* void* *)
+        width:          CARDINAL64;
+        height:         CARDINAL64;
+        pitch:          CARDINAL64;
+        bpp:            CARDINAL16;
+        memoryModel:    CARDINAL8;
+        redMaskSize:    CARDINAL8;
+        redMaskShift:   CARDINAL8;
+        greenMaskSize:  CARDINAL8;
+        greenMaskShift: CARDINAL8;
+        blueMaskSize:   CARDINAL8;
+        blueMaskShift:  CARDINAL8;
+        unused:         ARRAY [0..6] OF CARDINAL8;
+        edidSize:       CARDINAL64;
+        edid:           CARDINAL64;       (* void* *)
+        (* Response revision 1 *)
+        modeCount:      CARDINAL64;
+        modes:          CARDINAL64;       (* struct limine_video_mode** *)
+    END;
+    LimineFramebufferPtr = POINTER TO LimineFramebuffer;
+
+    LimineFramebufferResponse = RECORD
+        revision:          CARDINAL64;
+        framebufferCount:  CARDINAL64;
+        framebuffers:      CARDINAL64;   (* struct limine_framebuffer** *)
+    END;
+    LimineFramebufferResponsePtr = POINTER TO LimineFramebufferResponse;
+
+    LimineFramebufferRequest = RECORD
+        id:       ARRAY [0..3] OF CARDINAL64;
+        revision: CARDINAL64;
+        response: LimineFramebufferResponsePtr;
+    END;
+    LimineFramebufferRequestPtr = POINTER TO LimineFramebufferRequest;
+
+(* ========================================================================
+   Paging mode
+   ======================================================================== *)
+
+TYPE
+    LiminePagingModeResponse = RECORD
+        revision: CARDINAL64;
+        mode:     CARDINAL64;
+    END;
+    LiminePagingModeResponsePtr = POINTER TO LiminePagingModeResponse;
+
+    LiminePagingModeRequest = RECORD
+        id:        ARRAY [0..3] OF CARDINAL64;
+        revision:  CARDINAL64;
+        response:  LiminePagingModeResponsePtr;
+        mode:      CARDINAL64;
+        maxMode:   CARDINAL64;
+        minMode:   CARDINAL64;
+    END;
+    LiminePagingModeRequestPtr = POINTER TO LiminePagingModeRequest;
+
+(* ========================================================================
+   MP (Multiprocessor) — x86_64 variant
+   ======================================================================== *)
+
+TYPE
+    LimineMpInfo = RECORD
+        processorId:   CARDINAL32;
+        lapicId:       CARDINAL32;
+        reserved:      CARDINAL64;
+        gotoAddress:   CARDINAL64;       (* limine_goto_address (function ptr) *)
+        extraArgument: CARDINAL64;
+    END;
+    LimineMpInfoPtr = POINTER TO LimineMpInfo;
+
+    LimineMpResponse = RECORD
+        revision:    CARDINAL64;
+        flags:       CARDINAL32;
+        bspLapicId:  CARDINAL32;
+        cpuCount:    CARDINAL64;
+        cpus:        CARDINAL64;         (* struct limine_mp_info** *)
+    END;
+    LimineMpResponsePtr = POINTER TO LimineMpResponse;
+
+    LimineMpRequest = RECORD
+        id:       ARRAY [0..3] OF CARDINAL64;
+        revision: CARDINAL64;
+        response: LimineMpResponsePtr;
+        flags:    CARDINAL64;
+    END;
+    LimineMpRequestPtr = POINTER TO LimineMpRequest;
+
+(* ========================================================================
+   Memory map
+   ======================================================================== *)
+
+TYPE
+    LimineMemmapEntry = RECORD
+        base:   CARDINAL64;
+        length: CARDINAL64;
+        type:   CARDINAL64;
+    END;
+    LimineMemmapEntryPtr = POINTER TO LimineMemmapEntry;
+
+    LimineMemmapResponse = RECORD
+        revision:    CARDINAL64;
+        entryCount:  CARDINAL64;
+        entries:     CARDINAL64;        (* struct limine_memmap_entry** *)
+    END;
+    LimineMemmapResponsePtr = POINTER TO LimineMemmapResponse;
+
+    LimineMemmapRequest = RECORD
+        id:       ARRAY [0..3] OF CARDINAL64;
+        revision: CARDINAL64;
+        response: LimineMemmapResponsePtr;
+    END;
+    LimineMemmapRequestPtr = POINTER TO LimineMemmapRequest;
+
+(* ========================================================================
+   Entry point
+   ======================================================================== *)
+
+TYPE
+    LimineEntryPointResponse = RECORD
+        revision: CARDINAL64;
+    END;
+    LimineEntryPointResponsePtr = POINTER TO LimineEntryPointResponse;
+
+    LimineEntryPointRequest = RECORD
+        id:       ARRAY [0..3] OF CARDINAL64;
+        revision: CARDINAL64;
+        response: LimineEntryPointResponsePtr;
+        entry:    CARDINAL64;           (* limine_entry_point (function ptr) *)
+    END;
+    LimineEntryPointRequestPtr = POINTER TO LimineEntryPointRequest;
+
+(* ========================================================================
+   Executable file
+   ======================================================================== *)
+
+TYPE
+    LimineExecutableFileResponse = RECORD
+        revision:        CARDINAL64;
+        executableFile:  LimineFilePtr;
+    END;
+    LimineExecutableFileResponsePtr = POINTER TO LimineExecutableFileResponse;
+
+    LimineExecutableFileRequest = RECORD
+        id:       ARRAY [0..3] OF CARDINAL64;
+        revision: CARDINAL64;
+        response: LimineExecutableFileResponsePtr;
+    END;
+    LimineExecutableFileRequestPtr = POINTER TO LimineExecutableFileRequest;
+
+(* ========================================================================
+   Executable address
+   ======================================================================== *)
+
+TYPE
+    LimineExecutableAddressResponse = RECORD
+        revision:      CARDINAL64;
+        physicalBase:  CARDINAL64;
+        virtualBase:   CARDINAL64;
+    END;
+    LimineExecutableAddressResponsePtr = POINTER TO LimineExecutableAddressResponse;
+
+    LimineExecutableAddressRequest = RECORD
+        id:       ARRAY [0..3] OF CARDINAL64;
+        revision: CARDINAL64;
+        response: LimineExecutableAddressResponsePtr;
+    END;
+    LimineExecutableAddressRequestPtr = POINTER TO LimineExecutableAddressRequest;
+
+(* ========================================================================
+   RSDP
+   ======================================================================== *)
+
+TYPE
+    LimineRsdpResponse = RECORD
+        revision: CARDINAL64;
+        address:  CARDINAL64;           (* void* *)
+    END;
+    LimineRsdpResponsePtr = POINTER TO LimineRsdpResponse;
+
+    LimineRsdpRequest = RECORD
+        id:       ARRAY [0..3] OF CARDINAL64;
+        revision: CARDINAL64;
+        response: LimineRsdpResponsePtr;
+    END;
+    LimineRsdpRequestPtr = POINTER TO LimineRsdpRequest;
+
+(* ========================================================================
+   SMBIOS
+   ======================================================================== *)
+
+TYPE
+    LimineSmbiosResponse = RECORD
+        revision: CARDINAL64;
+        entry32:  CARDINAL64;           (* void* *)
+        entry64:  CARDINAL64;           (* void* *)
+    END;
+    LimineSmbiosResponsePtr = POINTER TO LimineSmbiosResponse;
+
+    LimineSmbiosRequest = RECORD
+        id:       ARRAY [0..3] OF CARDINAL64;
+        revision: CARDINAL64;
+        response: LimineSmbiosResponsePtr;
+    END;
+    LimineSmbiosRequestPtr = POINTER TO LimineSmbiosRequest;
+
+(* ========================================================================
+   EFI system table
+   ======================================================================== *)
+
+TYPE
+    LimineEfiSystemTableResponse = RECORD
+        revision: CARDINAL64;
+        address:  CARDINAL64;           (* void* *)
+    END;
+    LimineEfiSystemTableResponsePtr = POINTER TO LimineEfiSystemTableResponse;
+
+    LimineEfiSystemTableRequest = RECORD
+        id:       ARRAY [0..3] OF CARDINAL64;
+        revision: CARDINAL64;
+        response: LimineEfiSystemTableResponsePtr;
+    END;
+    LimineEfiSystemTableRequestPtr = POINTER TO LimineEfiSystemTableRequest;
+
+(* ========================================================================
+   EFI memory map
+   ======================================================================== *)
+
+TYPE
+    LimineEfiMemmapResponse = RECORD
+        revision:     CARDINAL64;
+        memmap:       CARDINAL64;       (* void* *)
+        memmapSize:   CARDINAL64;
+        descSize:     CARDINAL64;
+        descVersion:  CARDINAL64;
+    END;
+    LimineEfiMemmapResponsePtr = POINTER TO LimineEfiMemmapResponse;
+
+    LimineEfiMemmapRequest = RECORD
+        id:       ARRAY [0..3] OF CARDINAL64;
+        revision: CARDINAL64;
+        response: LimineEfiMemmapResponsePtr;
+    END;
+    LimineEfiMemmapRequestPtr = POINTER TO LimineEfiMemmapRequest;
+
+(* ========================================================================
+   TPM event log
+   ======================================================================== *)
+
+TYPE
+    LimineTpmEventLogResponse = RECORD
+        revision: CARDINAL64;
+        format:   CARDINAL64;
+        size:     CARDINAL64;
+        address:  CARDINAL64;           (* void* *)
+    END;
+    LimineTpmEventLogResponsePtr = POINTER TO LimineTpmEventLogResponse;
+
+    LimineTpmEventLogRequest = RECORD
+        id:       ARRAY [0..3] OF CARDINAL64;
+        revision: CARDINAL64;
+        response: LimineTpmEventLogResponsePtr;
+    END;
+    LimineTpmEventLogRequestPtr = POINTER TO LimineTpmEventLogRequest;
+
+(* ========================================================================
+   Date at boot
+   ======================================================================== *)
+
+TYPE
+    (* int64_t is represented as CARDINAL64 — cast is needed in Modula-2
+       but the bit pattern is identical. *)
+    LimineDateAtBootResponse = RECORD
+        revision:  CARDINAL64;
+        timestamp: CARDINAL64;          (* int64_t *)
+    END;
+    LimineDateAtBootResponsePtr = POINTER TO LimineDateAtBootResponse;
+
+    LimineDateAtBootRequest = RECORD
+        id:       ARRAY [0..3] OF CARDINAL64;
+        revision: CARDINAL64;
+        response: LimineDateAtBootResponsePtr;
+    END;
+    LimineDateAtBootRequestPtr = POINTER TO LimineDateAtBootRequest;
+
+(* ========================================================================
+   DTB (Device Tree Blob)
+   ======================================================================== *)
+
+TYPE
+    LimineDtbResponse = RECORD
+        revision: CARDINAL64;
+        dtbPtr:   CARDINAL64;           (* void* *)
+    END;
+    LimineDtbResponsePtr = POINTER TO LimineDtbResponse;
+
+    LimineDtbRequest = RECORD
+        id:       ARRAY [0..3] OF CARDINAL64;
+        revision: CARDINAL64;
+        response: LimineDtbResponsePtr;
+    END;
+    LimineDtbRequestPtr = POINTER TO LimineDtbRequest;
+
+(* ========================================================================
+   RISC-V BSP hart ID
+   ======================================================================== *)
+
+TYPE
+    LimineRiscvBspHartidResponse = RECORD
+        revision:   CARDINAL64;
+        bspHartid:  CARDINAL64;
+    END;
+    LimineRiscvBspHartidResponsePtr = POINTER TO LimineRiscvBspHartidResponse;
+
+    LimineRiscvBspHartidRequest = RECORD
+        id:       ARRAY [0..3] OF CARDINAL64;
+        revision: CARDINAL64;
+        response: LimineRiscvBspHartidResponsePtr;
+    END;
+    LimineRiscvBspHartidRequestPtr = POINTER TO LimineRiscvBspHartidRequest;
+
+(* ========================================================================
+   Bootloader performance
+   ======================================================================== *)
+
+TYPE
+    LimineBootloaderPerformanceResponse = RECORD
+        revision:   CARDINAL64;
+        resetUsec:  CARDINAL64;
+        initUsec:   CARDINAL64;
+        execUsec:   CARDINAL64;
+    END;
+    LimineBootloaderPerformanceResponsePtr = POINTER TO LimineBootloaderPerformanceResponse;
+
+    LimineBootloaderPerformanceRequest = RECORD
+        id:       ARRAY [0..3] OF CARDINAL64;
+        revision: CARDINAL64;
+        response: LimineBootloaderPerformanceResponsePtr;
+    END;
+    LimineBootloaderPerformanceRequestPtr = POINTER TO LimineBootloaderPerformanceRequest;
+
+(* ========================================================================
+   x86_64 keep IOMMU
+   ======================================================================== *)
+
+TYPE
+    LimineX8664KeepIommuResponse = RECORD
+        revision: CARDINAL64;
+    END;
+    LimineX8664KeepIommuResponsePtr = POINTER TO LimineX8664KeepIommuResponse;
+
+    LimineX8664KeepIommuRequest = RECORD
+        id:       ARRAY [0..3] OF CARDINAL64;
+        revision: CARDINAL64;
+        response: LimineX8664KeepIommuResponsePtr;
+    END;
+    LimineX8664KeepIommuRequestPtr = POINTER TO LimineX8664KeepIommuRequest;
+
+(* ========================================================================
+   TSC frequency
+   ======================================================================== *)
+
+TYPE
+    LimineTscFrequencyResponse = RECORD
+        revision:   CARDINAL64;
+        frequency:  CARDINAL64;
+    END;
+    LimineTscFrequencyResponsePtr = POINTER TO LimineTscFrequencyResponse;
+
+    LimineTscFrequencyRequest = RECORD
+        id:       ARRAY [0..3] OF CARDINAL64;
+        revision: CARDINAL64;
+        response: LimineTscFrequencyResponsePtr;
+    END;
+    LimineTscFrequencyRequestPtr = POINTER TO LimineTscFrequencyRequest;
+
+(* ========================================================================
+   Module (internal modules)
+   ======================================================================== *)
+
+TYPE
+    LimineInternalModule = RECORD
+        path:    CARDINAL64;            (* const char* *)
+        string:  CARDINAL64;            (* const char* *)
+        flags:   CARDINAL64;
+    END;
+    LimineInternalModulePtr = POINTER TO LimineInternalModule;
+
+    LimineModuleResponse = RECORD
+        revision:       CARDINAL64;
+        moduleCount:    CARDINAL64;
+        modules:        CARDINAL64;     (* struct limine_file** *)
+    END;
+    LimineModuleResponsePtr = POINTER TO LimineModuleResponse;
+
+    LimineModuleRequest = RECORD
+        id:                    ARRAY [0..3] OF CARDINAL64;
+        revision:              CARDINAL64;
+        response:              LimineModuleResponsePtr;
+        (* Request revision 1 *)
+        internalModuleCount:   CARDINAL64;
+        internalModules:       CARDINAL64; (* struct limine_internal_module** *)
+    END;
+    LimineModuleRequestPtr = POINTER TO LimineModuleRequest;
+
+(* ========================================================================
+   Flanterm FB init params
+   ======================================================================== *)
+
+TYPE
+    LimineFlantermFbInitParams = RECORD
+        canvas:            CARDINAL64;   (* uint32_t* *)
+        canvasSize:        CARDINAL64;
+        ansiColours:       ARRAY [0..7] OF CARDINAL32;
+        ansiBrightColours: ARRAY [0..7] OF CARDINAL32;
+        defaultBg:         CARDINAL32;
+        defaultFg:         CARDINAL32;
+        defaultBgBright:   CARDINAL32;
+        defaultFgBright:   CARDINAL32;
+        font:              CARDINAL64;   (* void* *)
+        fontWidth:         CARDINAL64;
+        fontHeight:        CARDINAL64;
+        fontSpacing:       CARDINAL64;
+        fontScaleX:        CARDINAL64;
+        fontScaleY:        CARDINAL64;
+        margin:            CARDINAL64;
+        rotation:          CARDINAL64;
+    END;
+    LimineFlantermFbInitParamsPtr = POINTER TO LimineFlantermFbInitParams;
+
+    LimineFlantermFbInitParamsResponse = RECORD
+        revision:    CARDINAL64;
+        entryCount:  CARDINAL64;
+        entries:     CARDINAL64;       (* struct limine_flanterm_fb_init_params** *)
+    END;
+    LimineFlantermFbInitParamsResponsePtr = POINTER TO LimineFlantermFbInitParamsResponse;
+
+    LimineFlantermFbInitParamsRequest = RECORD
+        id:       ARRAY [0..3] OF CARDINAL64;
+        revision: CARDINAL64;
+        response: LimineFlantermFbInitParamsResponsePtr;
+    END;
+    LimineFlantermFbInitParamsRequestPtr = POINTER TO LimineFlantermFbInitParamsRequest;
+
+(* ========================================================================
+   Externed request variables — defined in boot.S
+   ======================================================================== *)
+
+    (* The entry point request is always needed so Limine knows where to jump.
+       Other requests (framebuffer, memmap, etc.) are declared in boot.S
+       and accessed via the externs below if your module needs them. *)
+
+    (* Base revision tag — array of 3 CARDINAL64 values *)
+    VAR limineBaseRevision: ARRAY [0..2] OF CARDINAL64;
+
+    (* Entry point request — filled in by boot.S; entry points to _start *)
+    VAR limineEntryPointRequest: LimineEntryPointRequest;
+
+    (* Framebuffer request — response is filled in by bootloader *)
+    VAR limineFramebufferRequest: LimineFramebufferRequest;
+
+    (* Memory map request *)
+    VAR limineMemmapRequest: LimineMemmapRequest;
+
+    (* HHDM request *)
+    VAR limineHhdmRequest: LimineHhdmRequest;
+
+    (* Executable address request *)
+    VAR limineExecutableAddressRequest: LimineExecutableAddressRequest;
+
+    (* Bootloader info request *)
+    VAR limineBootloaderInfoRequest: LimineBootloaderInfoRequest;
+
+END Limine.

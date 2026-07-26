@@ -6,10 +6,10 @@
 
 ## Features
 
-- **Multiboot2-compliant** — boots via the [Limine](https://github.com/limine-bootloader/limine) bootloader
-- **x86_64 long mode** — 64-bit with 4-level paging (identity-mapped first 4 GB + higher-half kernel at 0xFFFFFFFF80000000)
+- **Limine boot protocol** — native [Limine](https://github.com/limine-bootloader/limine) protocol support (no Multiboot2 compatibility shim needed; portable beyond x86)
+- **x86_64 long mode** — entered directly by Limine in 64-bit mode with paging enabled (higher-half kernel at 0xFFFFFFFF80000000)
 - **Serial I/O** — COM1 UART at 38400 baud for debug output
-- **Framebuffer** — reads the Multiboot2 framebuffer tag and fills the display with an RGB gradient
+- **Framebuffer** — reads the Limine framebuffer response and fills the display with RGB stripes
 - **100% Modula-2** — no C code anywhere in the kernel; all runtime functions (`memcpy`, `memset`, `memmove`, `memcmp`) are implemented in pure Modula-2
 - **Modula-2 kernel modules** — clean separation of concerns via `DEFINITION` / `IMPLEMENTATION` modules
 - **Hierarchical build system** — architecture-aware Makefile hierarchy with `ARCH` and `TOOLS` inheritance
@@ -20,21 +20,22 @@
 ├── Makefile                 # Top-level build: kernel.elf only
 ├── build.sh                 # ISO packaging with xorriso
 ├── run.sh                   # QEMU launcher with UEFI/OVMF
-├── limine.conf              # Limine bootloader config
+├── limine.conf              # Limine bootloader config (protocol: limine)
 ├── src/
 │   ├── Makefile             # Compiles Main.o, stub.S, delegates to arch/ and libc/
 │   ├── Main.def             # Application-level main definition
 │   ├── Main.mod             # Application-level main (HLT loop)
 │   ├── stub.S               # Assembly stubs for gm2 runtime
+│   ├── boot/                # Architecture-independent boot protocol defs
+│   │   └── Limine.def       # Limine protocol — types, constants, externed request vars
 │   ├── arch/
 │   │   └── x86_64/
 │   │       ├── Makefile     # Compiles ArchMain.o, boot/boot.S, delegates to libm2/
 │   │       ├── ArchMain.def # x86_64 arch entry point definition
 │   │       ├── ArchMain.mod # x86_64 arch entry point (serial, framebuffer)
-│   │       ├── linker.ld    # Linker script (load address 0x100000)
+│   │       ├── linker.ld    # Linker script (higher-half at 0xFFFFFFFF80000000)
 │   │       ├── boot/
-│   │       │   ├── boot.S   # 32-bit → 64-bit assembly entry (GAS, Intel syntax)
-│   │       │   └── Multiboot2.def  # Multiboot2 constants and types (definition-only)
+│   │       │   ├── boot.S   # Limine request structures + 64-bit entry (GAS, Intel syntax)
 │   │       └── libm2/
 │   │           ├── Makefile
 │   │           ├── BitByteOps.def  # Bit manipulation library
@@ -50,20 +51,20 @@
 ## Boot Flow
 
 ```
-Limine (firmware)
-  └── boot.S (32-bit entry)
-      ├── Set up page tables (PML4, PDPT, PD0-3 for identity map;
-      │   PML4[511], PDPT[510], PD_high for higher-half map)
-      ├── Enable PAE + long mode + paging
-      ├── Load GDT, transition to 64-bit (trampoline64, identity-mapped)
-      ├── Absolute jump to higher_half_entry (0xFFFFFFFF80xxxxxx)
-      └── Call ArchMain_KernelMain(magic, mbi_addr)
-            └── ArchMain.mod
-                ├── SerialInit (COM1)
-                ├── Parse Multiboot2 info → find framebuffer tag
-                ├── Fill framebuffer with RGB gradient
-                └── Call Main.Main(0, emptyArgs)
-                      └── Main.mod (HLT loop)
+Limine (UEFI / BIOS)
+  │  - Boots the ELF directly in 64-bit long mode
+  │  - Sets up paging, maps kernel in higher-half (0xFFFFFFFF80000000+)
+  │  - Sets up a ≥64 KiB stack, fills in Limine response structures
+  │  - CS=0x28, DS/ES/SS/FS/GS=0x30, interrupts disabled, RAX–R15 = 0
+  │
+  └── Call ArchMain_KernelMain()
+      └── ArchMain.mod
+          ├── SerialInit (COM1)
+          ├── Verify Limine base revision == 6
+          ├── Read framebuffer response from limineFramebufferRequest
+          ├── Fill framebuffer with RGB stripes
+          └── Call Main.Main(0, emptyArgs)
+                └── Main.mod (HLT loop)
 ```
 
 ## Prerequisites
@@ -112,7 +113,7 @@ Makefile (top-level)
       ├── stub.o        (from stub.S)
       ├── Main.o        (from Main.mod)
       ├── arch/$(ARCH)/Makefile   ← architecture-specific
-      │   ├── boot/boot.o         (from boot.S)
+      │   ├── boot/boot.o         (from boot.S — Limine requests + entry)
       │   ├── ArchMain.o          (from ArchMain.mod)
       │   └── libm2/Makefile
       │       └── BitByteOps.o
@@ -122,8 +123,9 @@ Makefile (top-level)
 
 To add a new architecture:
 1. Create `src/arch/<arch>/` with its own `Makefile`, linker script, and boot code
-2. Add the object files to `ARCH_OBJS` in the top-level `Makefile`
-3. Add architecture-specific `M2FLAGS` in the top-level `Makefile`
+2. Add any arch-specific Limine request declarations to `boot.S`
+3. Add the object files to `ARCH_OBJS` in the top-level `Makefile`
+4. Add architecture-specific `M2FLAGS` in the top-level `Makefile`
 
 ## Toolchain Notes
 
@@ -135,13 +137,16 @@ Key compiler flags:
 - `-mno-mmx -mno-sse` — no floating-point/vector in kernel
 - `-fno-exceptions` — no Modula-2 exception handling
 
-## How the Framebuffer Works
+## How the Limine Protocol Works
 
-1. `boot.S` requests a 1024×768×32 framebuffer in the Multiboot2 header
-2. The bootloader populates the Multiboot2 info structure with a framebuffer tag (type 8)
-3. `ArchMain.mod` parses the tag list, extracts the framebuffer address/pitch/width/height/bpp
-4. Each pixel is written as a 4-byte BGRA record (blue byte first in little-endian)
-5. The screen is divided into three vertical stripes: red, green, and blue
+Unlike Multiboot2 (which requires a 32-bit entry stub, manual page-table construction, and a long-mode transition trampoline), the Limine protocol hands off directly in 64-bit mode:
+
+1. `boot.S` places a **start marker**, a **base-revision tag**, a set of **request structures**, and an **end marker** into the `.limine_requests*` sections
+2. Each request is a 64-byte (or larger) struct identified by a 4×`uint64` ID; the entry-point request points to `_start`
+3. Limine scans the loaded ELF between the markers, collects the requests, fills in `response` pointers, and jumps to the entry point
+4. The kernel reads `limineFramebufferRequest.response->framebuffers[0]` directly — no tag-walking required
+
+Request/response variables are declared in `boot.S` and externed in `src/boot/Limine.def` so that Modula-2 code can read them without needing C `__attribute__((section(...)))`.
 
 ## Module Naming Convention
 
@@ -157,29 +162,24 @@ All modules use `FOR "C"` linkage and `EXPORT UNQUALIFIED` so their symbols are 
 
 ## Memory Layout
 
-| Region | Physical Address | Virtual Address |
-|--------|-----------------|-----------------|
-| Kernel load | `0x100000` | `0xFFFFFFFF80100000` |
-| Framebuffer | `0x80000000` (set by firmware) | identity-mapped (`0x80000000`) |
-| Boot stack | `0x110000` (in BSS) | identity-mapped |
-| Page tables | `0x101000` (in BSS) | identity-mapped |
+| Region | Virtual Address | Notes |
+|--------|-----------------|-------|
+| Kernel load | `0xFFFFFFFF80100000` | Loaded and mapped by Limine |
+| Framebuffer | HHDM address (e.g. `0xFFFF800080000000`) | Mapped in the Higher Half Direct Map |
+| Boot stack | bootloader-reclaimable | ≥64 KiB, provided by Limine |
 
-The kernel is a **higher-half kernel**: it is loaded at physical 1 MB but
-linked to run at `0xFFFFFFFF80000000`.  The first 4 GB are identity-mapped
-so that the framebuffer, multiboot info structures, and boot trampoline
-remain accessible via their physical addresses.
+The kernel is a **higher-half kernel**. Limine maps all usable/bootloader/framebuffer memory through the Higher Half Direct Map (HHDM); the offset is available via `limineHhdmRequest.response->offset` if needed.
 
 ## Building from Scratch
 
 If you're setting up a fresh environment, you'll need:
 1. [GNU Modula-2 (gm2)](https://www.nongnu.org/gm2/) — part of GCC 16.1.0
-2. The [Limine](https://github.com/limine-bootloader/limine) binary distribution, or other Multiboot2-compatible bootloaders
+2. The [Limine](https://github.com/limine-bootloader/limine) binary distribution
 3. OVMF (UEFI firmware) from edk2
 4. QEMU and xorriso
 
 ## Acknowledgements
 
 - [GNU Modula-2](https://www.nongnu.org/gm2/) — compiler and runtime libraries
-- [Limine](https://github.com/limine-bootloader/limine) — bootloader
-- [Multiboot2 Specification](https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html) — boot protocol
+- [Limine](https://github.com/limine-bootloader/limine) — bootloader and boot protocol
 - **Claude Code (Anthropic)** — AI-assisted development for boilerplate codes, directory reorganization, testing, and debugging.

@@ -1,12 +1,12 @@
 IMPLEMENTATION MODULE ArchMain;
 
-FROM SYSTEM IMPORT BYTE, BITSET8, ADDRESS, CARDINAL8;
-FROM Multiboot2 IMPORT
-    MULTIBOOT2_BOOTLOADER_MAGIC, MULTIBOOT_INFO_ALIGN, MULTIBOOT_TAG_ALIGN,
-    MULTIBOOT_TAG_TYPE_END, MULTIBOOT_TAG_TYPE_FRAMEBUFFER,
-    MULTIBOOT_FRAMEBUFFER_TYPE_RGB,
-    MultibootTag, MultibootTagPtr,
-    MultibootTagFramebuffer, MultibootTagFramebufferPtr;
+FROM SYSTEM IMPORT BYTE, ADDRESS, CARDINAL8, CARDINAL16, CARDINAL64;
+FROM Limine IMPORT
+    LIMINE_FRAMEBUFFER_RGB,
+    LimineFramebuffer, LimineFramebufferPtr,
+    LimineFramebufferResponse, LimineFramebufferResponsePtr,
+    limineBaseRevision,
+    limineFramebufferRequest;
 FROM Main IMPORT Main;
 FROM BitByteOps IMPORT ByteAnd;
 
@@ -14,7 +14,7 @@ CONST
     COM1 = 3F8H;
 
 TYPE
-    (* 32-bit BGRA pixel (matches VBE RGB framebuffer layout) *)
+    (* 32-bit BGRA pixel (matches RGB framebuffer layout on x86) *)
     Pixel32 = RECORD
         blue:  BYTE;
         green: BYTE;
@@ -22,6 +22,9 @@ TYPE
         alpha: BYTE;
     END;
     Pixel32Ptr = POINTER TO Pixel32;
+
+    (* Pointer to an array of Limine framebuffer pointers (ptr-to-ptr) *)
+    LimineFramebufferPtrPtr = POINTER TO LimineFramebufferPtr;
 
 PROCEDURE HCF;
 BEGIN
@@ -73,9 +76,9 @@ BEGIN
     END;
 END SerialWriteString;
 
-PROCEDURE SerialWriteLongCard(n: LONGCARD);
+PROCEDURE SerialWriteCardinal64(n: CARDINAL64);
 VAR
-    buffer: ARRAY [0..10] OF CHAR;
+    buffer: ARRAY [0..20] OF CHAR;
     i: CARDINAL;
 BEGIN
     IF n = 0 THEN
@@ -84,7 +87,7 @@ BEGIN
     END;
     i := 0;
     WHILE n > 0 DO
-        buffer[i] := VAL(CHAR, n MOD 10 + VAL(LONGCARD, ORD('0')));
+        buffer[i] := VAL(CHAR, n MOD 10 + VAL(CARDINAL64, ORD('0')));
         INC(i);
         n := n DIV 10;
     END;
@@ -92,109 +95,115 @@ BEGIN
         DEC(i);
         SerialWriteChar(buffer[i]);
     END;
-END SerialWriteLongCard;
+END SerialWriteCardinal64;
 
-PROCEDURE SerialWriteLongCardHex(n: LONGCARD);
+PROCEDURE SerialWriteCardinal64Hex(n: CARDINAL64);
 VAR
-    buffer: ARRAY [0..8] OF CHAR;
+    buffer: ARRAY [0..16] OF CHAR;
     i: CARDINAL;
-    digit: LONGCARD;
+    digit: CARDINAL64;
 BEGIN
     i := 0;
-    WHILE i < 8 DO
+    WHILE i < 16 DO
         digit := n MOD 16;
         IF digit < 10 THEN
-            buffer[7 - i] := VAL(CHAR, digit + VAL(LONGCARD, ORD('0')));
+            buffer[15 - i] := VAL(CHAR, digit + VAL(CARDINAL64, ORD('0')));
         ELSE
-            buffer[7 - i] := VAL(CHAR, digit - 10 + VAL(LONGCARD, ORD('A')));
+            buffer[15 - i] := VAL(CHAR, digit - 10 + VAL(CARDINAL64, ORD('A')));
         END;
         n := n DIV 16;
         INC(i);
     END;
     SerialWriteString("0x");
-    FOR i := 0 TO 7 DO
+    FOR i := 0 TO 15 DO
         SerialWriteChar(buffer[i]);
     END;
-END SerialWriteLongCardHex;
+END SerialWriteCardinal64Hex;
 
-PROCEDURE KernelMain(magic, infoAddr: LONGCARD);
+PROCEDURE KernelMain();
 VAR
-    tag: MultibootTagPtr;
-    fbTag: MultibootTagFramebufferPtr;
+    fbResp: LimineFramebufferResponsePtr;
+    fbPtr: LimineFramebufferPtr;
+    fbPtrPtr: LimineFramebufferPtrPtr;
     pixel: Pixel32Ptr;
-    fbAddr: LONGCARD;
-    pitch, width, height: CARDINAL;
-    bpp: CARDINAL8;
-    row, col: CARDINAL;
-    rowAddr: LONGCARD;
-    emptyArgs: ARRAY [0..0] OF ARRAY [0..0] OF CHAR;
+    fbAddr: CARDINAL64;
+    pitch, width, height: CARDINAL64;
+    bpp: CARDINAL16;
+    row, col: CARDINAL64;
+    rowAddr: CARDINAL64;
+    baseRev: CARDINAL64;
 BEGIN
     SerialInit;
-    SerialWriteString("Hello, World from Modula-2 Kernel!");
+    SerialWriteString("Hello, World from Modula-2 Kernel (Limine)!");
     SerialWriteChar(BYTE(10)); (* Newline *)
 
-    (* Check if the magic number is correct *)
-    IF magic # MULTIBOOT2_BOOTLOADER_MAGIC THEN
-        SerialWriteString("Error: Invalid magic number! Expected: ");
-        SerialWriteLongCardHex(MULTIBOOT2_BOOTLOADER_MAGIC);
-        SerialWriteChar(BYTE(10)); (* Newline *)
-        HCF;
-    END;
-
-    (* Check alignment *)
-    IF infoAddr MOD MULTIBOOT_INFO_ALIGN # 0 THEN
-        SerialWriteString("Error: Info address is not properly aligned!");
-        SerialWriteChar(BYTE(10)); (* Newline *)
-        HCF;
-    END;
-
-    (* ---- Find the framebuffer tag in the multiboot2 info structure ---- *)
-    tag := VAL(MultibootTagPtr, VAL(ADDRESS, infoAddr + 8));
-    WHILE (tag # NIL) AND (tag^.tagType # MULTIBOOT_TAG_TYPE_FRAMEBUFFER) DO
-        IF tag^.tagType = MULTIBOOT_TAG_TYPE_END THEN
-            tag := NIL;
-        ELSE
-            (* Advance to next tag: align (addr + size) to 8 bytes *)
-            tag := VAL(MultibootTagPtr,
-                       VAL(ADDRESS,
-                           (VAL(LONGCARD, VAL(ADDRESS, tag))
-                            + VAL(LONGCARD, tag^.size) + 7) DIV 8 * 8));
-        END;
-    END;
-
-    IF tag = NIL THEN
-        SerialWriteString("Error: No framebuffer tag found!");
+    (* ---- Verify base revision ---- *)
+    baseRev := limineBaseRevision[2];
+    SerialWriteString("Base revision: requested=6, bootloader reports ");
+    SerialWriteCardinal64(baseRev);
+    SerialWriteChar(BYTE(10));
+    IF baseRev # 0 THEN
+        SerialWriteString("Error: Limine base revision 6 not supported!");
         SerialWriteChar(BYTE(10));
         HCF;
     END;
 
-    (* ---- Read framebuffer parameters ---- *)
-    fbTag := VAL(MultibootTagFramebufferPtr, VAL(ADDRESS, tag));
-    fbAddr := VAL(LONGCARD, fbTag^.framebufferAddr);
-    pitch  := fbTag^.framebufferPitch;
-    width  := fbTag^.framebufferWidth;
-    height := fbTag^.framebufferHeight;
-    bpp    := fbTag^.framebufferBpp;
+    (* ---- Check framebuffer response ---- *)
+    IF limineFramebufferRequest.response = NIL THEN
+        SerialWriteString("Error: No framebuffer response from Limine!");
+        SerialWriteChar(BYTE(10));
+        HCF;
+    END;
+
+    fbResp := limineFramebufferRequest.response;
+    SerialWriteString("Framebuffer count: ");
+    SerialWriteCardinal64(fbResp^.framebufferCount);
+    SerialWriteChar(BYTE(10));
+
+    IF fbResp^.framebufferCount = 0 THEN
+        SerialWriteString("Error: No framebuffers available!");
+        SerialWriteChar(BYTE(10));
+        HCF;
+    END;
+
+    (* Get the first framebuffer. framebuffers is a LimineFramebuffer**
+       stored as a CARDINAL64 address.  We cast through ADDRESS. *)
+    fbPtrPtr := VAL(LimineFramebufferPtrPtr,
+                    VAL(ADDRESS, fbResp^.framebuffers));
+    fbPtr := fbPtrPtr^;
+
+    fbAddr := fbPtr^.address;
+    pitch  := fbPtr^.pitch;
+    width  := fbPtr^.width;
+    height := fbPtr^.height;
+    bpp    := fbPtr^.bpp;
 
     SerialWriteString("Framebuffer: ");
-    SerialWriteLongCard(width);
+    SerialWriteCardinal64(width);
     SerialWriteString("x");
-    SerialWriteLongCard(height);
+    SerialWriteCardinal64(height);
     SerialWriteString("x");
-    SerialWriteLongCard(VAL(LONGCARD, bpp));
+    SerialWriteCardinal64(VAL(CARDINAL64, bpp));
     SerialWriteString(", pitch=");
-    SerialWriteLongCard(pitch);
+    SerialWriteCardinal64(pitch);
     SerialWriteString(", addr=");
-    SerialWriteLongCardHex(fbAddr);
+    SerialWriteCardinal64Hex(fbAddr);
+    SerialWriteChar(BYTE(10));
+
+    SerialWriteString("Memory model: ");
+    SerialWriteCardinal64(VAL(CARDINAL64, fbPtr^.memoryModel));
+    SerialWriteString(" (RGB=");
+    SerialWriteCardinal64(LIMINE_FRAMEBUFFER_RGB);
+    SerialWriteString(")");
     SerialWriteChar(BYTE(10));
 
     (* ---- Fill the framebuffer with an RGB gradient (32 bpp only) ---- *)
-    IF bpp = VAL(CARDINAL8, 32) THEN
+    IF bpp = 32 THEN
         FOR row := 0 TO height - 1 DO
-            rowAddr := fbAddr + VAL(LONGCARD, row) * VAL(LONGCARD, pitch);
+            rowAddr := fbAddr + row * pitch;
             FOR col := 0 TO width - 1 DO
                 pixel := VAL(Pixel32Ptr,
-                             VAL(ADDRESS, rowAddr + VAL(LONGCARD, col) * 4));
+                             VAL(ADDRESS, rowAddr + col * 4));
                 pixel^.blue := BYTE(0);
                 pixel^.green := BYTE(0);
                 pixel^.red := BYTE(0);
@@ -208,10 +217,10 @@ BEGIN
                 pixel^.alpha := BYTE(255);
             END;
         END;
-        SerialWriteString("Framebuffer filled with RGB!");
+        SerialWriteString("Framebuffer filled with RGB stripes!");
     ELSE
         SerialWriteString("Framebuffer is not 32 bpp (got ");
-        SerialWriteLongCard(VAL(LONGCARD, bpp));
+        SerialWriteCardinal64(VAL(CARDINAL64, bpp));
         SerialWriteString(" bpp) — skipping fill");
     END;
     SerialWriteChar(BYTE(10));
