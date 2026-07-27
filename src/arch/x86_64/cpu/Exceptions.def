@@ -1,0 +1,64 @@
+DEFINITION MODULE Exceptions;
+
+FROM SYSTEM IMPORT CARDINAL64;
+
+(* Exceptions -- CPU exception handlers for x86_64.
+
+   This module installs assembly stubs for all 20 CPU exceptions
+   (vectors 0-21, excluding reserved 9 and 15) into the IDT, and
+   provides the Modula-2 handler that the stubs call.
+
+   Exception routing:
+     * Page Fault (#PF, vector 14) -- prints the faulting address
+       (CR2) and error code, then panics.
+     * All other exceptions -- print the exception name, error code,
+       and a full register dump, then halt the CPU.
+
+   Since there is no scheduler or virtual memory manager yet, every
+   exception is fatal.  When a VMM is added, page faults for absent
+   pages will be routed to the page-fault handler instead. *)
+
+TYPE
+    (* Register frame pushed by the assembly stubs.
+       Fields are in reverse push order (last pushed = lowest address
+       = offset 0) because the x86 stack grows downward.  After the
+       15 saved registers comes the error code (real or fake 0) and
+       the CPU-pushed interrupt frame (RIP, CS, RFLAGS, RSP, SS). *)
+    InterruptFrame = RECORD
+        r15:       CARDINAL64;
+        r14:       CARDINAL64;
+        r13:       CARDINAL64;
+        r12:       CARDINAL64;
+        r11:       CARDINAL64;
+        r10:       CARDINAL64;
+        r9:        CARDINAL64;
+        r8:        CARDINAL64;
+        rbp:       CARDINAL64;
+        rdi:       CARDINAL64;
+        rsi:       CARDINAL64;
+        rdx:       CARDINAL64;
+        rcx:       CARDINAL64;
+        rbx:       CARDINAL64;
+        rax:       CARDINAL64;
+        errorCode: CARDINAL64;
+        rip:       CARDINAL64;
+        cs:        CARDINAL64;
+        rflags:    CARDINAL64;
+        rsp:       CARDINAL64;
+        ss:        CARDINAL64;
+    END;
+
+    InterruptFramePtr = POINTER TO InterruptFrame;
+
+(* InstallExceptions -- register all CPU exception handler stubs
+   (vectors 0..31) in the IDT.  Must be called after IDTInit. *)
+PROCEDURE InstallExceptions();
+
+(* ExceptionHandler -- called from assembly stubs after saving all
+   general-purpose registers.  Routes the exception to a kernel panic
+   (or page-fault diagnostic) and halts.  This procedure does not
+   return to the stub -- it halts the CPU. *)
+PROCEDURE ExceptionHandler(vector: CARDINAL64; errorCode: CARDINAL64;
+                           frame: InterruptFramePtr);
+
+END Exceptions.

@@ -11,31 +11,32 @@ M2FLAGS  := -fno-exceptions -fno-wideset -flibs=min -O2 \
             -mcmodel=large -mno-red-zone -mno-mmx -mno-sse
 
 # Include paths:
-#   .            — GDT and other arch-local modules
-#   ../../boot/  — architecture-independent Limine def
-#   ../../       — Main module
-#   ../../libm2/ — arch-independent utilities (MemUtils)
-#   libm2/       — arch-specific Modula-2 helpers (BitByteOps)
-M2INCLUDES := -I. -I../../boot -I../../ -I../../libm2 -Ilibm2
+#   .            - arch-local modules (ArchMain)
+#   cpu/         - CPU-specific modules (GDT, ...)
+#   ../../boot/  - architecture-independent Limine def
+#   ../../       - Main module
+#   ../../libm2/ - arch-independent utilities (MemUtils)
+#   libm2/       - arch-specific Modula-2 helpers (BitByteOps)
+M2INCLUDES := -I. -Icpu -I../../boot -I../../ -I../../libm2 -Ilibm2
 
-.PHONY: all clean libm2-submake
+.PHONY: all clean libm2-submake cpu-submake
 
-all: boot/boot.o ArchMain.o GDT.o libm2-submake
+all: boot/boot.o ArchMain.o cpu-submake libm2-submake
 
 # ---- Assembly ----
 boot/boot.o: boot/boot.S
 	$(AS) -o $@ $<
 
 # ---- Modula-2 compilation ----
-# GDT.mod imports from libm2/ (BitByteOps) and ../../libm2/ (MemUtils).
-GDT.o: GDT.mod GDT.def libm2-submake
-	$(M2) $(M2FLAGS) $(M2INCLUDES) -c -o $@ $<
-
 # ArchMain.mod imports from ../../boot/ (Limine),
 # ../../ (Main), libm2/ (BitByteOps), ../../libm2/ (MemUtils),
-# and ./ (GDT).
-ArchMain.o: ArchMain.mod ArchMain.def ../../boot/Limine.def GDT.def
+# and cpu/ (GDT).
+ArchMain.o: ArchMain.mod ArchMain.def ../../boot/Limine.def cpu/GDT.def
 	$(M2) $(M2FLAGS) $(M2INCLUDES) -c -o $@ $<
+
+# ---- Delegate to cpu/ (CPU-specific modules: GDT, IDT, Exceptions, ISR stubs) ----
+cpu-submake:
+	$(MAKE) -C cpu M2=$(M2) M2FLAGS='$(M2FLAGS)' AS=$(AS)
 
 # ---- Delegate to libm2/ (arch-specific helpers) ----
 libm2-submake:
@@ -44,4 +45,5 @@ libm2-submake:
 # ---- Clean ----
 clean:
 	rm -f *.o boot/*.o
+	$(MAKE) -C cpu clean
 	$(MAKE) -C libm2 clean

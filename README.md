@@ -1,4 +1,4 @@
-# ModOS-kernel — A Microkernel Written in Modula-2
+# ModOS-kernel - A Microkernel Written in Modula-2
 
 > **WARNING: In Refactorization**: This project is under refactorization. It might not be able to compile or run sometimes. Make sure to understand the directory structure before performing any operations.
 
@@ -6,14 +6,15 @@
 
 ## Features
 
-- **Limine boot protocol** — native [Limine](https://github.com/limine-bootloader/limine) protocol support (no Multiboot2 compatibility shim needed; portable beyond x86)
-- **x86_64 long mode** — entered directly by Limine in 64-bit mode with paging enabled (higher-half kernel at 0xFFFFFFFF80000000)
-- **Kernel-owned GDT & 64-bit TSS** — replaces the Limine-provided GDT with seven descriptors (null, kernel code/data, user code/data, TSS low/high) and installs a 104-byte Task State Segment with a ring-0 stack (32 KiB) and seven dedicated IST stacks (7 × 8 KiB) for critical exception handlers
-- **Serial I/O** — COM1 UART at 38400 baud for debug output
-- **Framebuffer** — reads the Limine framebuffer response and fills the display with RGB stripes
-- **100% Modula-2** — no C code anywhere in the kernel; all runtime functions (`memcpy`, `memset`, `memmove`, `memcmp`) are implemented in pure Modula-2; privileged x86 instructions (lgdt, ltr, far return) are issued via Modula-2 inline assembly
-- **Modula-2 kernel modules** — clean separation of concerns via `DEFINITION` / `IMPLEMENTATION` modules
-- **Hierarchical build system** — architecture-aware Makefile hierarchy with `ARCH` and `TOOLS` inheritance
+- **Limine boot protocol** - native [Limine](https://github.com/limine-bootloader/limine) protocol support (no Multiboot2 compatibility shim needed; portable beyond x86)
+- **x86_64 long mode** - entered directly by Limine in 64-bit mode with paging enabled (higher-half kernel at 0xFFFFFFFF80000000)
+- **Kernel-owned GDT & 64-bit TSS** - replaces the Limine-provided GDT with seven descriptors (null, kernel code/data, user code/data, TSS low/high) and installs a 104-byte Task State Segment with a ring-0 stack (32 KiB) and seven dedicated IST stacks (7 × 8 KiB) for critical exception handlers
+- **IDT & CPU exception handlers** - 256-entry Interrupt Descriptor Table with 20 assembly stubs for CPU exceptions (vectors 0–21); critical exceptions (NMI, Double Fault, Stack Fault, GP, Page Fault, Machine Check, Debug) are assigned dedicated IST stacks; the Modula-2 handler prints a full register dump and halts
+- **Serial I/O** - COM1 UART at 38400 baud for debug output
+- **Framebuffer** - reads the Limine framebuffer response and fills the display with RGB stripes
+- **100% Modula-2** - no C code anywhere in the kernel; all runtime functions (`memcpy`, `memset`, `memmove`, `memcmp`) are implemented in pure Modula-2; privileged x86 instructions (lgdt, ltr, far return) are issued via Modula-2 inline assembly
+- **Modula-2 kernel modules** - clean separation of concerns via `DEFINITION` / `IMPLEMENTATION` modules
+- **Hierarchical build system** - architecture-aware Makefile hierarchy with `ARCH` and `TOOLS` inheritance
 
 ## Project Structure
 
@@ -23,29 +24,36 @@
 ├── run.sh                   # QEMU launcher with UEFI/OVMF
 ├── limine.conf              # Limine bootloader config (protocol: limine)
 ├── src/
-│   ├── Makefile             # Compiles Main.o, stub.S, delegates to arch/ and libc/
+│   ├── Makefile             # Compiles Main.o, stub.S, delegates to arch/, libc/, libm2/
 │   ├── Main.def             # Application-level main definition
 │   ├── Main.mod             # Application-level main (HLT loop)
 │   ├── stub.S               # Assembly stubs for gm2 runtime
 │   ├── boot/                # Architecture-independent boot protocol defs
-│   │   └── Limine.def       # Limine protocol — types, constants, externed request vars
+│   │   └── Limine.def       # Limine protocol - types, constants, externed request vars
 │   ├── arch/
 │   │   └── x86_64/
-│   │       ├── Makefile     # Compiles ArchMain.o, GDT.o, boot/boot.S, delegates to libm2/
+│   │       ├── Makefile     # Compiles ArchMain.o, boot/boot.S, delegates to cpu/ and libm2/
 │   │       ├── ArchMain.def # x86_64 arch entry point definition
 │   │       ├── ArchMain.mod # x86_64 arch entry point (serial, framebuffer, calls GDTInit)
-│   │       ├── GDT.def      # GDT + 64-bit TSS module definition
-│   │       ├── GDT.mod      # GDT + TSS setup (Modula-2 with inline asm for lgdt/ltr)
 │   │       ├── linker.ld    # Linker script (higher-half at 0xFFFFFFFF80000000)
 │   │       ├── boot/
-│   │       │   ├── boot.S   # Limine request structures + 64-bit entry + GDT/TSS BSS (GAS, Intel syntax)
+│   │       │   └── boot.S   # Limine request structures + 64-bit entry (GAS, Intel syntax)
+│   │       ├── cpu/
+│   │       │   ├── Makefile
+│   │       │   ├── GDT.def        # GDT + 64-bit TSS module definition
+│   │       │   ├── GDT.mod        # GDT + TSS setup (Modula-2 with inline asm for lgdt/ltr)
+│   │       │   ├── IDT.def        # IDT module definition
+│   │       │   ├── IDT.mod        # IDT setup (256-entry table, InstallInterrupt, lidt)
+│   │       │   ├── Exceptions.def # CPU exception handler definition + InterruptFrame type
+│   │       │   ├── Exceptions.mod # Exception routing (panic + register dump)
+│   │       │   └── isr.S          # Assembly stubs for 20 CPU exceptions (GAS, Intel syntax)
 │   │       └── libm2/
 │   │           ├── Makefile
 │   │           ├── BitByteOps.def  # Bit manipulation library
 │   │           └── BitByteOps.mod  # Bit manipulation via inline assembly
 │   └── libc/
 │       ├── Makefile
-│       ├── string.def       # string module — memcpy, memset, memmove, memcmp
+│       ├── string.def       # string module - memcpy, memset, memmove, memcmp
 │       └── string.mod       # Pure Modula-2 implementation (FOR "C" linkage)
 ├── .gitignore
 └── README.md
@@ -64,13 +72,19 @@ Limine (UEFI / BIOS)
       └── ArchMain.mod
           ├── SerialInit (COM1)
           ├── Verify Limine base revision == 6
-          ├── GDTInit  (GDT.mod — load kernel-owned GDT + 64-bit TSS)
+          ├── GDTInit  (cpu/GDT.mod - load kernel-owned GDT + 64-bit TSS)
           │     ├── Assemble 7 GDT descriptors (null / kernel code+data /
           │     │   user code+data / TSS low+high)
           │     ├── Populate TSS with rsp0 = top of ring-0 stack,
           │     │   ist1..ist7 = top of seven 8 KiB IST stacks
           │     ├── lgdt, long-return to reload CS, set DS/ES/SS/FS/GS,
           │     └── ltr to load the TSS selector 0x28
+          ├── IDTInit  (cpu/IDT.mod - zero 256-entry IDT, load IDTR via lidt)
+          ├── InstallExceptions  (cpu/Exceptions.mod + cpu/isr.S)
+          │     ├── Install 20 interrupt gates for vectors 0–21
+          │     │   (NMI→IST1, DF→IST2, SS→IST3, GP→IST4, PF→IST5, MC→IST6, DB→IST7)
+          │     └── Each gate points to an assembly stub that saves all
+          │         registers and calls Exceptions_ExceptionHandler
           ├── Read framebuffer response from limineFramebufferRequest
           ├── Fill framebuffer with RGB stripes
           └── Call Main.Main()
@@ -117,15 +131,19 @@ The build system is designed for extensibility across architectures:
 
 ```
 Makefile (top-level)
-  ARCH, TOOLS, AS, LD, M2, M2FLAGS — exported to sub-makes
+  ARCH, TOOLS, AS, LD, M2, M2FLAGS - exported to sub-makes
   |
   └── src/Makefile
       ├── stub.o        (from stub.S)
       ├── Main.o        (from Main.mod)
       ├── arch/$(ARCH)/Makefile   ← architecture-specific
-      │   ├── boot/boot.o         (from boot.S — Limine requests + entry + GDT/TSS BSS)
+      │   ├── boot/boot.o         (from boot.S - Limine requests + entry)
       │   ├── ArchMain.o          (from ArchMain.mod)
-      │   ├── GDT.o               (from GDT.mod — GDT + TSS setup)
+      │   ├── cpu/Makefile
+      │   │   ├── GDT.o           (from GDT.mod - GDT + TSS setup)
+      │   │   ├── IDT.o           (from IDT.mod - IDT setup)
+      │   │   ├── Exceptions.o    (from Exceptions.mod - exception routing)
+      │   │   └── isr.o           (from isr.S - assembly exception stubs)
       │   └── libm2/Makefile
       │       └── BitByteOps.o
       └── libc/Makefile
@@ -140,13 +158,13 @@ To add a new architecture:
 
 ## Toolchain Notes
 
-The kernel uses **no C code** — every line is either Modula-2 or x86 assembly. The minimal gm2 runtime (`-flibs=min`) provides only `SYSTEM`, `M2RTS`, and a bare-bones interface. Heap, file I/O, exceptions, and the C standard library are all absent — just bare-metal Modula-2.
+The kernel uses **no C code** - every line is either Modula-2 or x86 assembly. The minimal gm2 runtime (`-flibs=min`) provides only `SYSTEM`, `M2RTS`, and a bare-bones interface. Heap, file I/O, exceptions, and the C standard library are all absent - just bare-metal Modula-2.
 
 Key compiler flags:
-- `-mcmodel=large` — required for kernel-space code
-- `-mno-red-zone` — interrupts would corrupt the red zone
-- `-mno-mmx -mno-sse` — no floating-point/vector in kernel
-- `-fno-exceptions` — no Modula-2 exception handling
+- `-mcmodel=large` - required for kernel-space code
+- `-mno-red-zone` - interrupts would corrupt the red zone
+- `-mno-mmx -mno-sse` - no floating-point/vector in kernel
+- `-fno-exceptions` - no Modula-2 exception handling
 
 ## How the Limine Protocol Works
 
@@ -155,13 +173,13 @@ Unlike Multiboot2 (which requires a 32-bit entry stub, manual page-table constru
 1. `boot.S` places a **start marker**, a **base-revision tag**, a set of **request structures**, and an **end marker** into the `.limine_requests*` sections
 2. Each request is a 64-byte (or larger) struct identified by a 4×`uint64` ID; the entry-point request points to `_start`
 3. Limine scans the loaded ELF between the markers, collects the requests, fills in `response` pointers, and jumps to the entry point
-4. The kernel reads `limineFramebufferRequest.response->framebuffers[0]` directly — no tag-walking required
+4. The kernel reads `limineFramebufferRequest.response->framebuffers[0]` directly - no tag-walking required
 
 Request/response variables are declared in `boot.S` and externed in `src/boot/Limine.def` so that Modula-2 code can read them without needing C `__attribute__((section(...)))`.
 
 ## Module Naming Convention
 
-The `libc/` directory follows a modular naming scheme — each sub-module is a separate Modula-2 definition/implementation pair:
+The `libc/` directory follows a modular naming scheme - each sub-module is a separate Modula-2 definition/implementation pair:
 
 | File | Module Name | Provides |
 |------|-------------|----------|
@@ -169,7 +187,7 @@ The `libc/` directory follows a modular naming scheme — each sub-module is a s
 | `stdlib.def` / `stdlib.mod` | (future) | Standard library functions |
 | `stdio.def` / `stdio.mod` | (future) | I/O functions |
 
-All modules use `FOR "C"` linkage and `EXPORT UNQUALIFIED` so their symbols are callable with C calling convention — satisfying compiler-generated references to `memcpy`, `memset`, etc.
+All modules use `FOR "C"` linkage and `EXPORT UNQUALIFIED` so their symbols are callable with C calling convention - satisfying compiler-generated references to `memcpy`, `memset`, etc.
 
 ## Memory Layout
 
@@ -184,13 +202,13 @@ The kernel is a **higher-half kernel**. Limine maps all usable/bootloader/frameb
 ## Building from Scratch
 
 If you're setting up a fresh environment, you'll need:
-1. [GNU Modula-2 (gm2)](https://www.nongnu.org/gm2/) — part of GCC 16.1.0
+1. [GNU Modula-2 (gm2)](https://www.nongnu.org/gm2/) - part of GCC 16.1.0
 2. The [Limine](https://github.com/limine-bootloader/limine) binary distribution
 3. OVMF (UEFI firmware) from edk2
 4. QEMU and xorriso
 
 ## Acknowledgements
 
-- [GNU Modula-2](https://www.nongnu.org/gm2/) — compiler and runtime libraries
-- [Limine](https://github.com/limine-bootloader/limine) — bootloader and boot protocol
-- **Claude Code (Anthropic)** — AI-assisted development for boilerplate codes, directory reorganization, testing, and debugging.
+- [GNU Modula-2](https://www.nongnu.org/gm2/) - compiler and runtime libraries
+- [Limine](https://github.com/limine-bootloader/limine) - bootloader and boot protocol
+- **Claude Code (Anthropic)** - AI-assisted development for boilerplate codes, directory reorganization, testing, and debugging.

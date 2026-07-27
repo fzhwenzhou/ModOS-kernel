@@ -1,0 +1,31 @@
+DEFINITION MODULE IDT;
+
+FROM SYSTEM IMPORT CARDINAL16, CARDINAL64;
+
+(* IDT -- Interrupt Descriptor Table setup for x86_64.
+
+   The IDT is a 256-entry array of 16-byte gate descriptors.  Each
+   gate tells the CPU where to jump (selector + offset), what stack
+   to use (IST), what privilege level is required (DPL), and whether
+   it is an interrupt gate (IF auto-cleared) or a trap gate.
+
+   IDTInit zeroes all 256 entries and loads the IDTR so the CPU
+   starts dispatching through our table.  No gates are present yet;
+   call InstallInterrupt for each vector you want to handle.
+
+   Call IDTInit exactly once, after GDTInit and before enabling
+   interrupts. *)
+
+PROCEDURE IDTInit();
+
+(* InstallInterrupt -- program one IDT gate descriptor.
+     handler   -- 64-bit address of the interrupt stub
+     segment   -- code segment selector (0x08 for kernel code)
+     ist       -- IST index (0 = use current stack, 1..7 = IST1..7)
+     dpl       -- descriptor privilege level (0 = kernel, 3 = user)
+     gateType  -- 0x0E = interrupt gate, 0x0F = trap gate
+     vector    -- interrupt vector number (0..255) *)
+PROCEDURE InstallInterrupt(handler: CARDINAL64; segment: CARDINAL16;
+                           ist, dpl, gateType, vector: CARDINAL);
+
+END IDT.

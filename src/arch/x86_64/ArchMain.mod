@@ -10,6 +10,8 @@ FROM Limine IMPORT
 FROM Main IMPORT Main;
 FROM BitByteOps IMPORT ByteAnd;
 FROM GDT IMPORT GDTInit;
+FROM IDT IMPORT IDTInit;
+FROM Exceptions IMPORT InstallExceptions;
 
 CONST
     COM1 = 3F8H;
@@ -160,6 +162,19 @@ BEGIN
     SerialWriteString("GDT and TSS loaded.");
     SerialWriteChar(BYTE(10));
 
+    (* ---- Load IDT and install exception handlers ---------------
+       IDTInit zeroes the 256-entry IDT and loads the IDTR.
+       InstallExceptions registers stubs for all 20 CPU exceptions
+       (vectors 0-21) with appropriate IST assignments.  After this,
+       any CPU exception will be caught and reported instead of
+       causing a silent triple-fault reset. *)
+    SerialWriteString("Loading IDT and exception handlers...");
+    SerialWriteChar(BYTE(10));
+    IDTInit();
+    InstallExceptions();
+    SerialWriteString("IDT and exception handlers installed.");
+    SerialWriteChar(BYTE(10));
+
     (* ---- Check framebuffer response ---- *)
     IF limineFramebufferRequest.response = NIL THEN
         SerialWriteString("Error: No framebuffer response from Limine!");
@@ -235,6 +250,16 @@ BEGIN
         SerialWriteCardinal64(VAL(CARDINAL64, bpp));
         SerialWriteString(" bpp) — skipping fill");
     END;
+    SerialWriteChar(BYTE(10));
+
+    (* ---- Test exception handling -------------------------------
+       Trigger a breakpoint (int3) to verify the IDT and exception
+       handler are working.  The handler will print a register dump
+       and halt.  Remove this once exception handling is verified. *)
+    SerialWriteString("Testing exception handler (int3)...");
+    SerialWriteChar(BYTE(10));
+    ASM VOLATILE ("int3");
+    SerialWriteString("Returned from breakpoint (should not happen).");
     SerialWriteChar(BYTE(10));
 
     Main; (* Call the main procedure from Main.mod *)
