@@ -47,6 +47,7 @@ KERNEL_OBJS := \
     src/stub.o \
     src/Main.o \
     $(ARCH_OBJS) \
+    src/libm2/MemUtils.o \
     src/libc/string.o
 
 # Linker script (architecture-specific)

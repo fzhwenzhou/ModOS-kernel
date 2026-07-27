@@ -22,9 +22,11 @@ DEFINITION MODULE GDT;
                      switch to a known-good stack automatically.
 
    The GDT table itself, the TSS, the 32 KiB ring-0 stack, and the seven
-   IST stacks are all placed in BSS by boot/boot.S.  This module's GDTInit
-   builds descriptors in place, issues LGDT, reloads CS/DS/ES/SS, and loads
-   the task register with LTR.
+   IST stacks are all placed in BSS by this module (gm2 emits them as
+   static variables; ADR() and MemZero() ensure the symbols are not
+   optimised away).  GDTInit builds the descriptors in place, zeroes the
+   GDT/TSS via MemZero, issues LGDT, reloads CS (through a far return)
+   and DS/ES/SS, then loads the task register with LTR.
 
    Call GDTInit() exactly once, early in kernel startup, before enabling
    interrupts or handling exceptions.  Written in pure Modula-2; the few

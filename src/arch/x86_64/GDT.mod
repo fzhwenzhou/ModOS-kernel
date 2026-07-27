@@ -9,20 +9,23 @@ IMPLEMENTATION MODULE GDT;
      is a single 64-bit value hand-assembled from base/limit/access/flags
      fields, which avoids any compiler-specific record padding.
    * The TSS descriptor occupies slots [5] and [6]: slot [5] holds the
-     low 8 bytes (limit = sizeof(TSS)-1, access = 0x89 = present+64-bit-
-     TSS, base bits 0..23, flags nibble 0), and slot [6] holds base bits
-     32..63.
-   * The TSS is declared below with 64-bit fields broken into lo/hi
-     CARDINAL32 pairs.  GNU Modula-2 aligns fields to their natural
+     low 8 bytes (limit = sizeof(TSS)-1, access = 0x89 = present + 64-bit
+     TSS available, base bits 0..23, flags nibble 0), and slot [6] holds
+     base bits 32..63.
+   * The TSS is a plain Modula-2 record with 64-bit fields split into
+     lo/hi CARDINAL32 pairs.  GNU Modula-2 aligns fields to their natural
      boundary and does not insert padding between a CARDINAL16 and a
-     following CARDINAL32, so the resulting struct is exactly 104 bytes
-     with offsets matching the hardware layout (verified against
-     sizeof).
-   * Ring-0 and IST stacks are static arrays placed in BSS.  Stack
-     pointers stored in the TSS point to the *top* of each array
-     (stacks grow downward). *)
+     following CARDINAL32, so the struct is exactly 104 bytes.
+   * Ring-0 and IST stacks are static byte arrays placed in BSS by gm2.
+     We force their emission by passing ADR(arr) to MemZero and to the
+     helpers that program the TSS.  ADR() is the SYSTEM.AddressOf
+     operator that the user explicitly asked us to use.
+   * The 48-bit GDTR pseudo-descriptor is a 10-byte packed byte array;
+     we build it in-place on the stack to avoid any global alignment
+     surprises. *)
 
-FROM SYSTEM IMPORT BYTE, CARDINAL16, CARDINAL32, CARDINAL64, ADDRESS;
+FROM SYSTEM IMPORT BYTE, CARDINAL16, CARDINAL32, CARDINAL64, ADDRESS, ADR;
+FROM MemUtils IMPORT MemZero;
 
 (* =====================================================================
    Constants -- GDT selectors (byte offsets into GDT)
@@ -47,7 +50,7 @@ CONST
     (* 64-bit TSS (available) access byte = present (0x80) | type 9 (0x09) *)
     GDT_ACCESS_TSS       = 89H;
 
-    (* Flags nibble (high nibble of the flags/limit-high byte) *)
+    (* Flags nibble (high nibble of byte 6 of a code/data descriptor) *)
     GDT_FLAG_LONG        = 20H;   (* L: 64-bit code segment *)
     GDT_FLAG_GRAN        = 80H;   (* G: 4 KiB granularity *)
 
@@ -56,26 +59,21 @@ CONST
     TSS_LIMIT            = TSS_SIZE - 1;
 
     (* Kernel ring-0 stack: 32 KiB *)
-    KERNEL_STACK_SIZE  = 32768;
+    KERNEL_STACK_SIZE    = 32768;
 
-    (* Each IST stack slot: 8 KiB *)
-    IST_STACK_SIZE     = 8192;
-    IST_COUNT          = 7;
+    (* Each IST stack slot: 8 KiB, seven slots total *)
+    IST_STACK_SIZE       = 8192;
+    IST_COUNT            = 7;
 
 (* =====================================================================
    Types
-
-   The TSS and GDTR types are laid out field-by-field so that the
-   generated offsets match the hardware expectation exactly (verified
-   at build time via emitted sizeof).
    ===================================================================== *)
 
 TYPE
     (* The 104-byte 64-bit TSS.  64-bit fields are split into lo/hi
-       32-bit halves so no CARDINAL64 forces alignment padding.  The
-       iomap field is set to TSS_SIZE (104) meaning there is no I/O
-       permission bitmap: every port access from CPL > IOPL raises
-       #GP. *)
+       CARDINAL32 pairs so CARDINAL64 alignment never introduces padding.
+       iomap is set to TSS_SIZE (104) meaning there is no I/O permission
+       bitmap: every port access from CPL > IOPL raises #GP. *)
     TSS = RECORD
         reserved1: CARDINAL32;                  (* +0  must be zero *)
         rsp0Lo:    CARDINAL32;                  (* +4  rsp0 low  *)
@@ -103,32 +101,33 @@ TYPE
         reserved3a: CARDINAL32;                 (* +92 must be zero *)
         reserved3b: CARDINAL32;                 (* +96 must be zero *)
         reserved4:  CARDINAL16;                 (* +100 must be zero *)
-        iomap:      CARDINAL16;                 (* +102 IOPB offset  *)
+        iomap:      CARDINAL16;                 (* +102 IOPB offset *)
     END;
+
+    (* The GDT is an array of seven 64-bit descriptors. *)
+    GDTArray = ARRAY [0..6] OF CARDINAL64;
 
     (* 48-bit GDTR value passed to lgdt.  Hardware layout is:
          offset 0: 16-bit limit
          offset 2: 64-bit base
-       for a total of 10 bytes.  We represent it as a 10-byte packed
-       byte array to avoid CARDINAL32 alignment padding that gm2 would
-       otherwise insert after a CARDINAL16 field, and fill it with
-       WriteU16/WriteU64 helpers below. *)
+       for a total of 10 bytes.  We use a 10-byte array and fill it
+       in-place on the stack to avoid alignment padding. *)
     GDTR = ARRAY [0..9] OF BYTE;
 
+    TSSPtr      = POINTER TO TSS;
+    GDTArrayPtr = POINTER TO GDTArray;
+
 (* =====================================================================
-   Module-level (static) storage.
+   Module-level storage.
+   Placed in BSS by gm2; ADR() calls in GDTInit force emission.
    ===================================================================== *)
 
-(* All GDT/TSS/stack storage lives in boot/boot.S.  We extern it there
-   under the gm2-mangled GDT_<name> aliases to avoid a quirk where gm2
-   silently fails to emit BSS symbols for large static arrays. *)
-
-(* Pointer types used to cast assembly-provided addresses back into
-   typed views for field access. *)
-TYPE
-    TSSPtr = POINTER TO TSS;
-    GDTArray = ARRAY [0..6] OF CARDINAL64;
-    GDTArrayPtr = POINTER TO GDTArray;
+VAR
+    gdt:         GDTArray;                                  (* 56 B *)
+    tss:         TSS;                                       (* 104 B *)
+    kernelStack: ARRAY [0..KERNEL_STACK_SIZE - 1] OF BYTE;  (* 32 KiB *)
+    istStacks:   ARRAY [0..IST_COUNT - 1] OF
+                     ARRAY [0..IST_STACK_SIZE - 1] OF BYTE; (* 56 KiB *)
 
 (* =====================================================================
    Helpers -- encoding GDT entries
@@ -148,7 +147,6 @@ VAR
     limitLo: CARDINAL64;
     flagsLimitHi: BYTE;
 BEGIN
-    entry   := 0;
     baseLo  := VAL(CARDINAL64, base) MOD 65536;
     baseMi  := (VAL(CARDINAL64, base) DIV 65536) MOD 256;
     baseHi  := VAL(CARDINAL64, base) DIV 16777216;
@@ -158,8 +156,8 @@ BEGIN
        The two nibbles are disjoint so addition acts like bitwise OR. *)
     flagsLimitHi := VAL(BYTE, VAL(CARDINAL32, flags) + (limit DIV 65536));
 
-    (* Each field occupies a disjoint set of bits, so integer addition
-       is equivalent to bitwise OR (gm2 treats OR as a BOOLEAN operator
+    (* All other bit fields are disjoint too; integer addition is
+       equivalent to bitwise OR (gm2 treats OR as a BOOLEAN operator
        on CARDINAL types). *)
     entry := limitLo
              + baseLo * 010000H                         (* bits 16..31 *)
@@ -174,8 +172,7 @@ END EncodeCodeData;
 (* EncodeTSSLow: lower 64 bits of the 128-bit TSS descriptor.
      base   -- 64-bit TSS base address
      limit  -- TSS limit (TSS_SIZE - 1 = 103)
-   Access = 0x89 (present + 64-bit TSS available).  Flags nibble = 0.
-*)
+   Access = 0x89 (present + 64-bit TSS available).  Flags nibble = 0. *)
 PROCEDURE EncodeTSSLow(base: CARDINAL64; limit: CARDINAL16): CARDINAL64;
 VAR
     entry: CARDINAL64;
@@ -185,7 +182,6 @@ BEGIN
     baseMi := (base DIV 65536) MOD 256;
     baseHi := (base DIV 16777216) MOD 256;
 
-    (* All bit fields are disjoint -- addition acts as bitwise OR. *)
     entry := VAL(CARDINAL64, limit)
              + baseLo * 010000H                         (* bits 16..31 *)
              + baseMi * 100000000H                      (* bits 32..39 *)
@@ -213,63 +209,26 @@ END WritePtr;
 
 (* StU16 / StU64: store a little-endian 16/64-bit value into a byte
    array at the given offset.  Used to populate the packed GDTR byte
-   array, which must not have alignment padding.
-   gm2 requires explicit VAL(BYTE, ...) because BYTE(...) is a size
-   conversion that requires matching operand sizes. *)
+   array, which must not have alignment padding. *)
 PROCEDURE StU16(VAR buf: ARRAY OF BYTE; off: CARDINAL; v: CARDINAL16);
+VAR 
+    p: POINTER TO CARDINAL16;
 BEGIN
-    buf[off]     := VAL(BYTE, v MOD 256);
-    buf[off + 1] := VAL(BYTE, v DIV 256);
+    p := ADR(buf[off]);
+    p^ := v;
 END StU16;
 
 PROCEDURE StU64(VAR buf: ARRAY OF BYTE; off: CARDINAL; v: CARDINAL64);
-VAR i: CARDINAL;
+VAR 
+    p: POINTER TO CARDINAL64;
 BEGIN
-    i := 0;
-    WHILE i < 8 DO
-        buf[off + i] := VAL(BYTE, v MOD 256);
-        v := v DIV 256;
-        INC(i);
-    END;
+    p := ADR(buf[off]);
+    p^ := v;
 END StU64;
 
 (* =====================================================================
    Privileged-instruction helpers (inline assembly)
    ===================================================================== *)
-
-(* KernelStackAddr: return the address of the static kernelStack
-   array (32 KiB BSS).  gm2 mangles global names as ModuleName_VarName,
-   so the symbol is GDT_kernelStack. *)
-PROCEDURE KernelStackAddr(): CARDINAL64;
-VAR a: CARDINAL64;
-BEGIN
-    ASM VOLATILE ("leaq GDT_kernelStack(%%rip), %0" : "=r"(a));
-    RETURN a;
-END KernelStackAddr;
-
-(* ISTStackAddr: return the address of istStacks[i]. *)
-PROCEDURE ISTStackAddr(i: CARDINAL): CARDINAL64;
-VAR a: CARDINAL64;
-BEGIN
-    (* Each IST stack is IST_STACK_SIZE bytes; index into the array. *)
-    ASM VOLATILE ("leaq GDT_istStacks(%%rip), %0" : "=r"(a));
-    RETURN a + VAL(CARDINAL64, i) * IST_STACK_SIZE;
-END ISTStackAddr;
-
-(* TSSAddr / GDTAddr: addresses of the TSS and GDT structs. *)
-PROCEDURE TSSAddr(): CARDINAL64;
-VAR a: CARDINAL64;
-BEGIN
-    ASM VOLATILE ("leaq GDT_tss(%%rip), %0" : "=r"(a));
-    RETURN a;
-END TSSAddr;
-
-PROCEDURE GDTAddr(): CARDINAL64;
-VAR a: CARDINAL64;
-BEGIN
-    ASM VOLATILE ("leaq GDT_gdt(%%rip), %0" : "=r"(a));
-    RETURN a;
-END GDTAddr;
 
 (* LTR -- load the task register with the given TSS selector. *)
 PROCEDURE LTR(selector: CARDINAL16);
@@ -302,36 +261,23 @@ VAR
     stackTop: CARDINAL64;
     access, flags: BYTE;
 BEGIN
-    (* ---- Obtain pointers to assembly-provided storage ---------- *)
-    tssBase := TSSAddr();
-    gdtBase := GDTAddr();
-    tp := VAL(TSSPtr, VAL(ADDRESS, tssBase));
-    gp := VAL(GDTArrayPtr, VAL(ADDRESS, gdtBase));
+    (* ---- Take addresses of our static BSS objects --------------
+       ADR() from SYSTEM returns an ADDRESS; calling it (and passing
+       the result to MemZero / WritePtr) forces gm2 to actually emit
+       the BSS symbols.  We cast through ADDRESS and then to both
+       TSSPtr/GDTArrayPtr (for field access) and CARDINAL64 (for
+       descriptor encoding and GDTR population). *)
+    tp := VAL(TSSPtr,      ADR(tss));
+    gp := VAL(GDTArrayPtr, ADR(gdt));
+    tssBase := VAL(CARDINAL64, VAL(ADDRESS, tp));
+    gdtBase := VAL(CARDINAL64, VAL(ADDRESS, gp));
 
-    (* ---- Zero out the GDT array (7 x 8 = 56 bytes) ------------- *)
-    FOR i := 0 TO 6 DO
-        gp^[i] := 0;
-    END;
-
-    (* ---- Zero out the TSS (104 bytes) --------------------------
-       The TSS is in BSS which the bootloader already zeroed, but we
-       clear the fields we use explicitly for safety.  Reserved and
-       unused fields stay zero. *)
-    tp^.reserved1  := 0;
-    tp^.rsp0Lo     := 0; tp^.rsp0Hi := 0;
-    tp^.rsp1Lo     := 0; tp^.rsp1Hi := 0;
-    tp^.rsp2Lo     := 0; tp^.rsp2Hi := 0;
-    tp^.reserved2a := 0; tp^.reserved2b := 0;
-    tp^.ist1Lo     := 0; tp^.ist1Hi := 0;
-    tp^.ist2Lo     := 0; tp^.ist2Hi := 0;
-    tp^.ist3Lo     := 0; tp^.ist3Hi := 0;
-    tp^.ist4Lo     := 0; tp^.ist4Hi := 0;
-    tp^.ist5Lo     := 0; tp^.ist5Hi := 0;
-    tp^.ist6Lo     := 0; tp^.ist6Hi := 0;
-    tp^.ist7Lo     := 0; tp^.ist7Hi := 0;
-    tp^.reserved3a := 0; tp^.reserved3b := 0;
-    tp^.reserved4  := 0;
-    tp^.iomap      := 0;
+    (* ---- Zero the GDT and TSS with a single MemZero each -------
+       MemZero is the efficient bulk-zero primitive from MemUtils.
+       The stacks live in BSS which the bootloader already zeroed;
+       we do not waste time re-zeroing them. *)
+    MemZero(VAL(ADDRESS, gp), 7 * 8);         (* 56 bytes *)
+    MemZero(VAL(ADDRESS, tp), TSS_SIZE);      (* 104 bytes *)
 
     (* ---- Populate code/data descriptors ------------------------ *)
 
@@ -362,41 +308,45 @@ BEGIN
 
     (* ---- Populate TSS ------------------------------------------ *)
 
-    (* Ring-0 stack: top of kernelStack array (stacks grow down). *)
-    stackTop := KernelStackAddr() + KERNEL_STACK_SIZE;
+    (* Ring-0 stack: top of kernelStack (stacks grow downward). *)
+    stackTop := VAL(CARDINAL64, VAL(ADDRESS, ADR(kernelStack))) + KERNEL_STACK_SIZE;
     WritePtr(tp^.rsp0Lo, tp^.rsp0Hi, stackTop);
     WritePtr(tp^.rsp1Lo, tp^.rsp1Hi, stackTop);
     WritePtr(tp^.rsp2Lo, tp^.rsp2Hi, stackTop);
 
-    (* IST slots 1..7: each has a dedicated 8 KiB stack. *)
-    WritePtr(tp^.ist1Lo, tp^.ist1Hi, ISTStackAddr(0) + IST_STACK_SIZE);
-    WritePtr(tp^.ist2Lo, tp^.ist2Hi, ISTStackAddr(1) + IST_STACK_SIZE);
-    WritePtr(tp^.ist3Lo, tp^.ist3Hi, ISTStackAddr(2) + IST_STACK_SIZE);
-    WritePtr(tp^.ist4Lo, tp^.ist4Hi, ISTStackAddr(3) + IST_STACK_SIZE);
-    WritePtr(tp^.ist5Lo, tp^.ist5Hi, ISTStackAddr(4) + IST_STACK_SIZE);
-    WritePtr(tp^.ist6Lo, tp^.ist6Hi, ISTStackAddr(5) + IST_STACK_SIZE);
-    WritePtr(tp^.ist7Lo, tp^.ist7Hi, ISTStackAddr(6) + IST_STACK_SIZE);
+    (* IST slots 1..7: each has a dedicated 8 KiB stack.
+       ADR(istStacks[i]) takes the address of each nested array; the
+       CARDINAL64 cast routes through ADDRESS first via VAL(). *)
+    FOR i := 0 TO IST_COUNT - 1 DO
+        stackTop := VAL(CARDINAL64, VAL(ADDRESS, ADR(istStacks[i])))
+                    + IST_STACK_SIZE;
+        CASE i OF
+          0: WritePtr(tp^.ist1Lo, tp^.ist1Hi, stackTop);
+        | 1: WritePtr(tp^.ist2Lo, tp^.ist2Hi, stackTop);
+        | 2: WritePtr(tp^.ist3Lo, tp^.ist3Hi, stackTop);
+        | 3: WritePtr(tp^.ist4Lo, tp^.ist4Hi, stackTop);
+        | 4: WritePtr(tp^.ist5Lo, tp^.ist5Hi, stackTop);
+        | 5: WritePtr(tp^.ist6Lo, tp^.ist6Hi, stackTop);
+        | 6: WritePtr(tp^.ist7Lo, tp^.ist7Hi, stackTop);
+        END;
+    END;
 
-    (* I/O permission bitmap offset set past the TSS end: no IOPB. *)
+    (* I/O permission bitmap offset = TSS_SIZE: no IOPB. *)
     tp^.iomap := TSS_SIZE;
 
-    (* ---- Fill the TSS descriptor in GDT slots [5] and [6] ------ *)
+    (* ---- Fill TSS descriptor in GDT slots [5] and [6] ----------- *)
     gp^[5] := EncodeTSSLow(tssBase, TSS_LIMIT);
     gp^[6] := EncodeTSSHigh(tssBase);
 
-    (* ---- Assemble GDTR as a packed byte array ------------------
-       Hardware layout (10 bytes, little-endian):
-         [0..1]  limit (16-bit)
-         [2..9]  base  (64-bit)
-       We fill with the StU16/StU64 helpers to guarantee no padding. *)
-    FOR i := 0 TO 9 DO
-        gdtr[i] := BYTE(0);
-    END;
-    StU16(gdtr, 0, VAL(CARDINAL16, 7 * 8 - 1));    (* limit = 55 *)
-    StU64(gdtr, 2, gdtBase);                        (* GDT base address *)
+    (* ---- Assemble GDTR (packed 10-byte layout on the stack) -----
+         [0..1] limit (16-bit) = 55 = 7*8 - 1
+         [2..9] base  (64-bit) = gdtBase
+       We clear the whole array then store the two fields. *)
+    MemZero(VAL(ADDRESS, ADR(gdtr)), 10);
+    StU16(gdtr, 0, VAL(CARDINAL16, 7 * 8 - 1));
+    StU64(gdtr, 2, gdtBase);
 
     (* ---- Load GDT and reload segments -------------------------- *)
-    (* Pass the gdtr byte array directly as a memory operand. *)
     ASM VOLATILE ("lgdt %[gdtr]" : : [gdtr] "m"(gdtr) : "memory");
     ReloadSegments();
 

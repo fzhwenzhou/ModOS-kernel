@@ -1,0 +1,21 @@
+(* MemUtils.def -- Basic architecture-independent memory utilities.
+
+   Thin Modula-2 wrappers around the libc memcpy/memset primitives so
+   that kernel code can zero or copy memory regions without pulling in
+   C headers directly.  Compatible with the gm2 m2-libs interface. *)
+
+DEFINITION MODULE MemUtils;
+
+FROM SYSTEM IMPORT ADDRESS;
+
+EXPORT QUALIFIED MemCopy, MemZero;
+
+(* MemCopy -- copy `length` bytes starting at `from` to `to`.
+   The regions must not overlap (for overlapping regions callers
+   should use memmove via libc directly). *)
+PROCEDURE MemCopy(from: ADDRESS; length: CARDINAL; to: ADDRESS);
+
+(* MemZero -- set `length` bytes starting at `a` to zero. *)
+PROCEDURE MemZero(a: ADDRESS; length: CARDINAL);
+
+END MemUtils.
