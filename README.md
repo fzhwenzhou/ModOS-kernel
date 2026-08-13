@@ -1,6 +1,6 @@
 # ModOS-kernel - A Microkernel Written in Modula-2
 
-> **WARNING: In Refactorization**: This project is under refactorization. It might not be able to compile or run sometimes. Make sure to understand the directory structure before performing any operations.
+> **WARNING: Suspended Development Indefinitely**: This project is a hobby project with the aim to show Modula-2 can run in the kernel space on modern UEFI x86_64 hardware with GNU Modula-2 (gm2). It is neither a kernel complete enough for daily use or development, nor a recommended way to write new kernels. Enthusiasts are encouraged to fork this repository.
 
 **ModOS-kernel** is a bare-metal x86_64 kernel written in GNU Modula-2 (gm2), demonstrating that Modula-2 can be used effectively in kernel-space, with full access to inline assembly, hardware I/O, and raw memory.
 
